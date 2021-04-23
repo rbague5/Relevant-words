@@ -7,6 +7,7 @@ from gensim.models import Word2Vec
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import pairwise_distances_argmin_min
 from sklearn.manifold import TSNE
+
 sns.set(rc={'figure.figsize': (11.7, 8.27)})
 palette = sns.color_palette("bright", 10)
 
@@ -21,6 +22,9 @@ def train_w2v_model(model_path, model_name, corpus):
     else:
         model = Word2Vec.load(path)
     return model
+
+def load_w2v_model(model_path, model_name):
+    return Word2Vec.load(os.path.join(model_path, model_name))
 
 
 def save_gmm_model(model_path, model):
@@ -43,21 +47,22 @@ def load_gmm_model(model_path):
 
 
 def model_saved(model_path, model_name):
+    if not os.path.exists(model_path):
+        os.makedirs(model_path)
     for filename in os.listdir(model_path):
         if filename.startswith(model_name):
             return True
     return False
 
 
-def train_gmm_model(w2v_model, reviews_type, nouns, model_path):
+def train_gmm_model(w2v_model, nouns, model_path):
     clustering_results = {}
     aic_bic_results = {}
     closest = {}
     corpus = set(w2v_model.wv.index_to_key[:]).intersection(nouns)
     embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])  # Clustering con los sustantivos
-    for n_clusters in range(1, 10):
-        n_clusters += 1
-        model_name = str(n_clusters) + "_" + reviews_type
+    for n_clusters in range(2, 7):
+        model_name = str(n_clusters)
         if not model_saved(model_path, model_name):
             peaks = retrieve_peaks(n_clusters, w2v_model, corpus)
             gmm = GaussianMixture(n_components=len(peaks), means_init=peaks).fit(embedding_corpus)
@@ -94,26 +99,24 @@ def retrieve_best_gmm_model(aic_bic_results):
 
 
 def retrieve_best_model_results(best_gmm_model_name, trained_models, w2v_model, nouns):
-    labels = {}
-    probabilities = {}
-    n_clusters, target_model = best_gmm_model_name.split("_")
+    n_clusters = best_gmm_model_name
     model = trained_models[best_gmm_model_name]
     embedding_corpus = np.array([w2v_model.wv[key] for key in set(w2v_model.wv.index_to_key[:]).intersection(
         nouns)])  # Clustering con los sustantivos
-    labels[target_model] = model.predict(embedding_corpus)
-    probabilities[target_model] = model.score_samples(embedding_corpus)
+    labels = model.predict(embedding_corpus)
+    probabilities = model.score_samples(embedding_corpus)
     sample = np.array([key for key in set(w2v_model.wv.index_to_key[:]).intersection(set(nouns))])
-    return probabilities, get_words_by_cluster(sample, target_model, labels, n_clusters), labels
+    return probabilities, get_words_by_cluster(sample, labels, n_clusters), labels
 
 
-def get_words_by_cluster(sample, target_model, labels, n_clusters):
+def get_words_by_cluster(sample, labels, n_clusters):
     clusters = {}
     for id_cluster in range(int(n_clusters)):
-        clusters[id_cluster] = np.array(list(sample))[np.where(labels[target_model] == id_cluster)[0]]
+        clusters[id_cluster] = np.array(list(sample))[np.where(labels == id_cluster)[0]]
     return clusters
 
 
-def perform_tsne(w2v_model, nouns, labels, figure_path):
+def perform_tsne(w2v_model, nouns, labels, figure_path, review_type):
     plt.figure(figsize=(15, 10))
     palette = sns.color_palette("bright", 10)
     tsne = TSNE(n_components=2, random_state=0)
@@ -126,8 +129,7 @@ def perform_tsne(w2v_model, nouns, labels, figure_path):
     # a = pd.concat({'x': pd.Series(X_embedded[:, 0]), 'y': pd.Series(X_embedded[:, 1]), 'val': pd.Series(np.array(set(w2v_model.wv.index_to_key[:]).intersection(nouns)))}, axis=1)
     # for i, point in a.iterrows():
     #     plt.gca().text(point['x']+.02, point['y'], str(point['val']))
-    plt.savefig(os.path.join(figure_path, "topics.png"))
-
+    plt.savefig(os.path.join(figure_path, review_type+".png"))
 
 
 def save_topic_clusters_results(cluster_dict, results_path):
@@ -135,3 +137,10 @@ def save_topic_clusters_results(cluster_dict, results_path):
         os.makedirs(results_path)
     for key in cluster_dict:
         np.save(os.path.join(results_path, str(key) + '.npy'), cluster_dict[key])
+
+
+def load_topic_clustes(results_path):
+    topic_clusters = {}
+    for filename in os.listdir(results_path):
+        topic_clusters[filename.split('.')[0]] = np.load(os.path.join(results_path, filename))
+    return topic_clusters
