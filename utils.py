@@ -7,9 +7,12 @@ from gensim.models import Word2Vec
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import pairwise_distances_argmin_min
 from sklearn.manifold import TSNE
+from sklearn.preprocessing import normalize
+from itertools import repeat
+
 
 sns.set(rc={'figure.figsize': (11.7, 8.27)})
-palette = sns.color_palette("bright", 10)
+palette = sns.color_palette("bright", 30)
 
 
 def train_w2v_model(model_path, model_name, corpus):
@@ -17,7 +20,7 @@ def train_w2v_model(model_path, model_name, corpus):
         os.makedirs(model_path)
     path = os.path.join(model_path, model_name)
     if not os.path.exists(path):
-        model = Word2Vec(corpus, epochs=15, min_count=10, vector_size=300, window=5, workers=4, sg=1)
+        model = Word2Vec(corpus, iter=15, min_count=10, size=300, window=5, workers=4, sg=1)
         model.save(path)
     else:
         model = Word2Vec.load(path)
@@ -59,9 +62,10 @@ def train_gmm_model(w2v_model, nouns, model_path):
     clustering_results = {}
     aic_bic_results = {}
     closest = {}
-    corpus = set(w2v_model.wv.index_to_key[:]).intersection(nouns)
-    embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])  # Clustering con los sustantivos
-    for n_clusters in range(2, 7):
+    corpus = set(w2v_model.wv.vocab).intersection(nouns)
+    rich_corpus = enrich_corpus(corpus, w2v_model)
+    embedding_corpus = np.array([w2v_model.wv[key] for key in rich_corpus])  # Clustering con los sustantivos
+    for n_clusters in range(20, 21, 10):
         model_name = str(n_clusters)
         if not model_saved(model_path, model_name):
             peaks = retrieve_peaks(n_clusters, w2v_model, corpus)
@@ -74,18 +78,20 @@ def train_gmm_model(w2v_model, nouns, model_path):
         aic_bic_results[model_name] = [gmm.aic(embedding_corpus), gmm.bic(embedding_corpus)]
         closest_idx, _ = pairwise_distances_argmin_min(gmm.means_, embedding_corpus)
         closest[model_name] = []
-        for idx in closest_idx.tolist():
-            closest[model_name].append(w2v_model.wv.index_to_key[idx])
+        # for idx in closest_idx.tolist():
+        #     closest[model_name].append(list(w2v_model.wv.vocab)[idx])
     return clustering_results, aic_bic_results, closest
 
+def enrich_corpus(corpus, w2v_model):
+    return [x for item in corpus for x in repeat(item, w2v_model.wv.vocab[item].count)]
 
 def retrieve_peaks(n_peaks, w2v_model, corpus):
     peaks = []
     last_index_found = 0
     for i in range(n_peaks):
-        while last_index_found < len(w2v_model.wv.index_to_key):
-            if w2v_model.wv.index_to_key[last_index_found] in corpus:
-                peaks.append(w2v_model.wv[w2v_model.wv.index_to_key[last_index_found]])
+        while last_index_found < len(w2v_model.wv.vocab):
+            if list(w2v_model.wv.vocab)[last_index_found] in corpus:
+                peaks.append(w2v_model.wv[list(w2v_model.wv.vocab)[last_index_found]])
                 last_index_found += 1
                 break
             last_index_found += 1
@@ -101,11 +107,12 @@ def retrieve_best_gmm_model(aic_bic_results):
 def retrieve_best_model_results(best_gmm_model_name, trained_models, w2v_model, nouns):
     n_clusters = best_gmm_model_name
     model = trained_models[best_gmm_model_name]
-    embedding_corpus = np.array([w2v_model.wv[key] for key in set(w2v_model.wv.index_to_key[:]).intersection(
+    embedding_corpus = np.array([w2v_model.wv[key] for key in set(w2v_model.wv.vocab).intersection(
         nouns)])  # Clustering con los sustantivos
     labels = model.predict(embedding_corpus)
     probabilities = model.score_samples(embedding_corpus)
-    sample = np.array([key for key in set(w2v_model.wv.index_to_key[:]).intersection(set(nouns))])
+    # probabilities = normalize(probabilities[:, np.newaxis], axis=0).ravel() #TODO revisar normalización de logProbabilities
+    sample = np.array([key for key in set(w2v_model.wv.vocab).intersection(set(nouns))])
     return probabilities, get_words_by_cluster(sample, labels, n_clusters), labels
 
 
@@ -116,11 +123,12 @@ def get_words_by_cluster(sample, labels, n_clusters):
     return clusters
 
 
+# https://towardsdatascience.com/a-beginners-guide-to-word-embedding-with-gensim-word2vec-model-5970fa56cc92
 def perform_tsne(w2v_model, nouns, labels, figure_path, review_type):
     plt.figure(figsize=(15, 10))
-    palette = sns.color_palette("bright", 10)
+    palette = sns.color_palette("bright", 30)
     tsne = TSNE(n_components=2, random_state=0)
-    embedding_corpus = np.array([w2v_model.wv[key] for key in set(w2v_model.wv.index_to_key[:]).intersection(nouns)])
+    embedding_corpus = np.array([w2v_model.wv[key] for key in set(w2v_model.wv.vocab).intersection(nouns)])
     X_embedded = tsne.fit_transform(X=embedding_corpus)
     ax = sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=labels, legend='full',
                          palette=palette[:len(set(labels))])
@@ -144,3 +152,9 @@ def load_topic_clustes(results_path):
     for filename in os.listdir(results_path):
         topic_clusters[filename.split('.')[0]] = np.load(os.path.join(results_path, filename))
     return topic_clusters
+
+def get_pdf_by_cluster(probabilities, labels):
+    df = pd.DataFrame({'prob': probabilities, 'label': labels})
+    for idx_cluster in np.unique(labels):
+        sub_df = df[df['label']==idx_cluster]
+        print(np.sum(np.exp(sub_df['prob'])))
