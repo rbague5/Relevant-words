@@ -20,7 +20,7 @@ def train_w2v_model(model_path, model_name, corpus):
         os.makedirs(model_path)
     path = os.path.join(model_path, model_name)
     if not os.path.exists(path):
-        model = Word2Vec(corpus, iter=15, min_count=10, size=300, window=5, workers=4, sg=1)
+        model = Word2Vec(corpus, iter=20, min_count=10, size=300, window=5, workers=4, sg=1)
         model.save(path)
     else:
         model = Word2Vec.load(path)
@@ -63,9 +63,9 @@ def train_gmm_model(w2v_model, nouns, model_path):
     aic_bic_results = {}
     closest = {}
     corpus = set(w2v_model.wv.vocab).intersection(nouns)
-    rich_corpus = enrich_corpus(corpus, w2v_model)
-    embedding_corpus = np.array([w2v_model.wv[key] for key in rich_corpus])  # Clustering con los sustantivos
-    for n_clusters in range(20, 21, 10):
+    # rich_corpus = enrich_corpus(corpus, w2v_model)
+    embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])  # Clustering con los sustantivos
+    for n_clusters in range(2, 7):
         model_name = str(n_clusters)
         if not model_saved(model_path, model_name):
             peaks = retrieve_peaks(n_clusters, w2v_model, corpus)
@@ -134,6 +134,12 @@ def perform_tsne(w2v_model, nouns, labels, figure_path, review_type):
                          palette=palette[:len(set(labels))])
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
+
+    for label, x, y in zip(set(w2v_model.wv.vocab).intersection(nouns), X_embedded[:, 0], X_embedded[:, 1]):
+        plt.annotate(label, xy=(x, y), xytext=(0, 0), fontsize=6, textcoords='offset points')
+    # plt.xlim(X_embedded[:, 0].min()+0.00005,  X_embedded[:, 0].max()+0.00005)
+    # plt.ylim(X_embedded[:, 1].min()+0.00005, X_embedded[:, 1].max()+0.00005)
+
     # a = pd.concat({'x': pd.Series(X_embedded[:, 0]), 'y': pd.Series(X_embedded[:, 1]), 'val': pd.Series(np.array(set(w2v_model.wv.index_to_key[:]).intersection(nouns)))}, axis=1)
     # for i, point in a.iterrows():
     #     plt.gca().text(point['x']+.02, point['y'], str(point['val']))
