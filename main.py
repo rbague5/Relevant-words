@@ -26,15 +26,18 @@ negative_model_path = os.path.join(w2v_models_path, "negative")
 
 def main():
     data = load_reviews_df("gijon", "reviews")
-    topic_clustering(data)
-    word_clustering()
+    most_commented_restaurants = data['restaurantId'].value_counts()
+    for restaurant_id in most_commented_restaurants.head(1).index:
+        topic_clustering(data, restaurant_id)
+        # word_clustering()
 
 
 
-def topic_clustering(data):
+def topic_clustering(data, restaurat_id):
     # Retrieve positive and negative reviews for each restaurantId
-    positive_reviews_data = data[data['rating'] >= lower_limit_positive_rating]
-    negative_reviews_data = data[data['rating'] <= upper_limit_negative_rating]
+    restaurant_reviews = data[data['restaurantId'] == restaurat_id]
+    positive_reviews_data = restaurant_reviews[restaurant_reviews['rating'] >= lower_limit_positive_rating]
+    negative_reviews_data = restaurant_reviews[restaurant_reviews['rating'] <= upper_limit_negative_rating]
 
     corpus_positive = [ast.literal_eval(str_words) for str_words in positive_reviews_data['text'].values]
     corpus_negative = [ast.literal_eval(str_words) for str_words in negative_reviews_data['text'].values]
@@ -47,14 +50,14 @@ def topic_clustering(data):
     #Entrenar tanto el modelo para comentario positivos como negativos (por ahora solo los positivos)
     for review_type in ['positive', 'negative']:
         corpus = corpus_positive if review_type == 'positive' else corpus_negative
-        w2v_model = utils.train_w2v_model(os.path.join(w2v_models_path), review_type, corpus)
+        w2v_model = utils.train_w2v_model(os.path.join(w2v_models_path, str(restaurat_id)), review_type, corpus)
         nouns = set(corpus_nouns_positive) if review_type == "positive" else set(corpus_nouns_negative)
         trained_models, aic_bic_results, closest_words = utils.train_gmm_model(w2v_model, nouns, os.path.join(gmm_models_topics_path, review_type))
         best_gmm_model = utils.retrieve_best_gmm_model(aic_bic_results)
         probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, nouns)
 
-        utils.perform_tsne(w2v_model, nouns, labels, os.path.join(figures_path, "topics"), review_type)
-        utils.save_topic_clusters_results(cluster_words, os.path.join(topics_clusters_path, review_type))
+        utils.perform_tsne(w2v_model, nouns, labels, os.path.join(figures_path, "topics", str(restaurat_id)), review_type)
+        utils.save_topic_clusters_results(cluster_words, os.path.join(topics_clusters_path, review_type, str(restaurat_id)))
         # print(closest_words[best_gmm_model])
         # print(cluster_words)
 
