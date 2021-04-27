@@ -9,6 +9,7 @@ from sklearn.metrics import pairwise_distances_argmin_min
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import normalize
 from itertools import repeat
+from matplotlib.colors import LogNorm
 
 
 sns.set(rc={'figure.figsize': (11.7, 8.27)})
@@ -63,9 +64,9 @@ def train_gmm_model(w2v_model, nouns, model_path):
     aic_bic_results = {}
     closest = {}
     corpus = set(w2v_model.wv.vocab).intersection(nouns)
-    # rich_corpus = enrich_corpus(corpus, w2v_model)
-    embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])  # Clustering con los sustantivos
-    for n_clusters in range(2, 7):
+    rich_corpus = enrich_corpus(corpus, w2v_model)
+    embedding_corpus = np.array([w2v_model.wv[key] for key in rich_corpus])  # Clustering con los sustantivos
+    for n_clusters in range(10, 11, 10): #10,60,10
         model_name = str(n_clusters)
         if not model_saved(model_path, model_name):
             peaks = retrieve_peaks(n_clusters, w2v_model, corpus)
@@ -144,6 +145,7 @@ def perform_tsne(w2v_model, nouns, labels, figure_path, review_type):
     # for i, point in a.iterrows():
     #     plt.gca().text(point['x']+.02, point['y'], str(point['val']))
     plt.savefig(os.path.join(figure_path, review_type+".png"))
+
 
 
 def save_topic_clusters_results(cluster_dict, results_path):
