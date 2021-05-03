@@ -11,7 +11,8 @@ from sklearn.preprocessing import normalize
 from itertools import repeat
 
 
-sns.set(rc={'figure.figsize': (11.7, 8.27)})
+sns.set(rc={'figure.figsize': (15, 10)})
+sns.set(rc={"figure.dpi":300, 'savefig.dpi':300})
 palette = sns.color_palette("bright", 30)
 
 
