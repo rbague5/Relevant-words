@@ -104,15 +104,14 @@ def retrieve_best_gmm_model(aic_bic_results):
     return results_df[results_df["aic"] == results_df["aic"].min()].index[0]
 
 
-def retrieve_best_model_results(best_gmm_model_name, trained_models, w2v_model, nouns):
+def retrieve_best_model_results(best_gmm_model_name, trained_models, w2v_model, closest_words):
     n_clusters = best_gmm_model_name
     model = trained_models[best_gmm_model_name]
-    embedding_corpus = np.array([w2v_model.wv[key] for key in set(w2v_model.wv.vocab).intersection(
-        nouns)])  # Clustering con los sustantivos
+    embedding_corpus = np.array([w2v_model.wv[key] for key in np.array(closest_words).flatten().tolist()])
     labels = model.predict(embedding_corpus)
     probabilities = model.score_samples(embedding_corpus)
     # probabilities = normalize(probabilities[:, np.newaxis], axis=0).ravel() #TODO revisar normalización de logProbabilities
-    sample = np.array([key for key in set(w2v_model.wv.vocab).intersection(set(nouns))])
+    sample = np.array(closest_words).flatten()
     return probabilities, get_words_by_cluster(sample, labels, n_clusters), labels
 
 
