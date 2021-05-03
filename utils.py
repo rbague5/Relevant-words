@@ -124,25 +124,19 @@ def get_words_by_cluster(sample, labels, n_clusters):
 
 
 # https://towardsdatascience.com/a-beginners-guide-to-word-embedding-with-gensim-word2vec-model-5970fa56cc92
-def perform_tsne(w2v_model, nouns, labels, figure_path, review_type):
+def perform_tsne(w2v_model, labels, closest_words, figure_path, review_type):
     plt.figure(figsize=(15, 10))
     palette = sns.color_palette("bright", 30)
     tsne = TSNE(n_components=2, random_state=0)
-    embedding_corpus = np.array([w2v_model.wv[key] for key in set(w2v_model.wv.vocab).intersection(nouns)])
+    embedding_corpus = np.array([w2v_model.wv[key] for key in np.array(closest_words).flatten().tolist()])
     X_embedded = tsne.fit_transform(X=embedding_corpus)
-    ax = sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=labels, legend='full',
+    ax = sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=labels, legend='full', style=labels,
                          palette=palette[:len(set(labels))])
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    for label, x, y in zip(set(w2v_model.wv.vocab).intersection(nouns), X_embedded[:, 0], X_embedded[:, 1]):
+    for label, x, y in zip(np.array(closest_words).flatten().tolist(), X_embedded[:, 0], X_embedded[:, 1]):
         plt.annotate(label, xy=(x, y), xytext=(0, 0), fontsize=6, textcoords='offset points')
-    # plt.xlim(X_embedded[:, 0].min()+0.00005,  X_embedded[:, 0].max()+0.00005)
-    # plt.ylim(X_embedded[:, 1].min()+0.00005, X_embedded[:, 1].max()+0.00005)
-
-    # a = pd.concat({'x': pd.Series(X_embedded[:, 0]), 'y': pd.Series(X_embedded[:, 1]), 'val': pd.Series(np.array(set(w2v_model.wv.index_to_key[:]).intersection(nouns)))}, axis=1)
-    # for i, point in a.iterrows():
-    #     plt.gca().text(point['x']+.02, point['y'], str(point['val']))
     plt.savefig(os.path.join(figure_path, review_type+".png"))
 
 
