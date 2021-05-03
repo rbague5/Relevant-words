@@ -1,14 +1,7 @@
-import pandas as pd
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.preprocessing import Binarizer
-from gensim.models import Word2Vec
 import ast
-import utils
 import os
-import scipy.stats
-import numpy as np
-from sklearn.metrics import pairwise_distances_argmin_min
 
+import utils
 from Preprocessing import load_reviews_df
 
 lower_limit_positive_rating = 30
@@ -54,30 +47,12 @@ def topic_clustering(data, restaurat_id):
         nouns = set(corpus_nouns_positive) if review_type == "positive" else set(corpus_nouns_negative)
         trained_models, aic_bic_results, closest_words = utils.train_gmm_model(w2v_model, nouns, os.path.join(gmm_models_topics_path, review_type))
         best_gmm_model = utils.retrieve_best_gmm_model(aic_bic_results)
-        probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, nouns)
+        probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, closest_words[best_gmm_model])
 
-        utils.perform_tsne(w2v_model, nouns, labels, os.path.join(figures_path, "topics", str(restaurat_id)), review_type)
+        utils.perform_tsne(w2v_model, nouns, labels, closest_words[best_gmm_model], os.path.join(figures_path, "topics", str(restaurat_id)), review_type)
         utils.save_topic_clusters_results(cluster_words, os.path.join(topics_clusters_path, review_type, str(restaurat_id)))
         # print(closest_words[best_gmm_model])
         # print(cluster_words)
-
-def word_clustering():
-    cluster_word_by_review_type = {}
-    for review_type in ['positive', 'negative']:
-        cluster_word_by_review_type[review_type] = []
-        topic_clusters = utils.load_topic_clustes(os.path.join(topics_clusters_path, review_type))
-        w2v_model = utils.load_w2v_model(w2v_models_path, review_type)
-        for idx_cluster, cluster_words in topic_clusters.items():
-            trained_models, aic_bic_results, closest_words = utils.train_gmm_model(w2v_model, set(cluster_words.tolist()), os.path.join(gmm_models_words_path, review_type, "topic_cluster_" + str(idx_cluster)))
-            best_gmm_model = utils.retrieve_best_gmm_model(aic_bic_results)
-            probabilities, cluster_relevant_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, set(cluster_words.tolist()))
-            # cluster_word_by_review_type[review_type].append(cluster_relevant_words)
-            # prob = np.sum(np.exp(probabilities))
-            # utils.get_pdf_by_cluster(probabilities, labels)
-            utils.perform_tsne(w2v_model, set(cluster_words.tolist()), labels, os.path.join(figures_path, "words", review_type), "topic_cluster_"+str(idx_cluster))
-            utils.save_topic_clusters_results(cluster_relevant_words, os.path.join(words_clusters_path, review_type, "topic_cluster_"+str(idx_cluster)))
-
-
 
 if __name__ == "__main__":
     main()
