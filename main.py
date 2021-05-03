@@ -27,7 +27,7 @@ negative_model_path = os.path.join(w2v_models_path, "negative")
 def main():
     data = load_reviews_df("gijon", "reviews")
     topic_clustering(data)
-    word_clustering()
+    # word_clustering()
 
 
 
@@ -51,9 +51,9 @@ def topic_clustering(data):
         nouns = set(corpus_nouns_positive) if review_type == "positive" else set(corpus_nouns_negative)
         trained_models, aic_bic_results, closest_words = utils.train_gmm_model(w2v_model, nouns, os.path.join(gmm_models_topics_path, review_type))
         best_gmm_model = utils.retrieve_best_gmm_model(aic_bic_results)
-        probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, nouns)
+        probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, closest_words[best_gmm_model])
 
-        utils.perform_tsne(w2v_model, nouns, labels, os.path.join(figures_path, "topics"), review_type)
+        utils.perform_tsne(w2v_model, labels, closest_words[best_gmm_model], os.path.join(figures_path, "topics"), review_type)
         utils.save_topic_clusters_results(cluster_words, os.path.join(topics_clusters_path, review_type))
         # print(closest_words[best_gmm_model])
         # print(cluster_words)

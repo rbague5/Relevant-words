@@ -11,7 +11,8 @@ from sklearn.preprocessing import normalize
 from itertools import repeat
 
 
-sns.set(rc={'figure.figsize': (11.7, 8.27)})
+sns.set(rc={'figure.figsize': (15, 10)})
+sns.set(rc={"figure.dpi":300, 'savefig.dpi':300})
 palette = sns.color_palette("bright", 30)
 
 
@@ -63,9 +64,8 @@ def train_gmm_model(w2v_model, nouns, model_path):
     aic_bic_results = {}
     closest = {}
     corpus = set(w2v_model.wv.vocab).intersection(nouns)
-    # rich_corpus = enrich_corpus(corpus, w2v_model)
     embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])  # Clustering con los sustantivos
-    for n_clusters in range(2, 7):
+    for n_clusters in range(2, 10):
         model_name = str(n_clusters)
         if not model_saved(model_path, model_name):
             peaks = retrieve_peaks(n_clusters, w2v_model, corpus)
@@ -77,13 +77,22 @@ def train_gmm_model(w2v_model, nouns, model_path):
             clustering_results[model_name] = gmm
         aic_bic_results[model_name] = [gmm.aic(embedding_corpus), gmm.bic(embedding_corpus)]
         closest_idx, _ = pairwise_distances_argmin_min(gmm.means_, embedding_corpus)
-        closest[model_name] = []
-        # for idx in closest_idx.tolist():
-        #     closest[model_name].append(list(w2v_model.wv.vocab)[idx])
+        closest[model_name] = get_top_20_nearest_points(gmm, w2v_model, list(corpus))
     return clustering_results, aic_bic_results, closest
 
-def enrich_corpus(corpus, w2v_model):
-    return [x for item in corpus for x in repeat(item, w2v_model.wv.vocab[item].count)]
+
+def get_top_20_nearest_points(gmm_model, w2v_model, corpus):
+    top_n = 20
+    w, h = top_n, len(gmm_model.means_)
+    top_10 = [[0 for x in range(w)] for y in range(h)]
+    for n in range(w):
+        embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])
+        closest_idx, _ = pairwise_distances_argmin_min(gmm_model.means_, embedding_corpus)
+        closest_words = [corpus[idx] for idx in closest_idx.tolist()]
+        for idx, val in enumerate(closest_words):
+            top_10[idx][n] = val
+        corpus = list(filter(lambda x: x not in closest_words, corpus))
+    return top_10
 
 def retrieve_peaks(n_peaks, w2v_model, corpus):
     peaks = []
@@ -104,15 +113,15 @@ def retrieve_best_gmm_model(aic_bic_results):
     return results_df[results_df["aic"] == results_df["aic"].min()].index[0]
 
 
-def retrieve_best_model_results(best_gmm_model_name, trained_models, w2v_model, nouns):
+def retrieve_best_model_results(best_gmm_model_name, trained_models, w2v_model, closest_words):
     n_clusters = best_gmm_model_name
     model = trained_models[best_gmm_model_name]
-    embedding_corpus = np.array([w2v_model.wv[key] for key in set(w2v_model.wv.vocab).intersection(
-        nouns)])  # Clustering con los sustantivos
-    labels = model.predict(embedding_corpus)
+    embedding_corpus = np.array([w2v_model.wv[key] for key in np.array(closest_words).flatten().tolist()])
+    labels = np.indices(np.array(closest_words).shape)[0].flatten().tolist()
+    # labels = model.predict(embedding_corpus)
     probabilities = model.score_samples(embedding_corpus)
     # probabilities = normalize(probabilities[:, np.newaxis], axis=0).ravel() #TODO revisar normalización de logProbabilities
-    sample = np.array([key for key in set(w2v_model.wv.vocab).intersection(set(nouns))])
+    sample = np.array(closest_words).flatten()
     return probabilities, get_words_by_cluster(sample, labels, n_clusters), labels
 
 
@@ -123,26 +132,19 @@ def get_words_by_cluster(sample, labels, n_clusters):
     return clusters
 
 
-# https://towardsdatascience.com/a-beginners-guide-to-word-embedding-with-gensim-word2vec-model-5970fa56cc92
-def perform_tsne(w2v_model, nouns, labels, figure_path, review_type):
+def perform_tsne(w2v_model, labels, closest_words, figure_path, review_type):
     plt.figure(figsize=(15, 10))
     palette = sns.color_palette("bright", 30)
     tsne = TSNE(n_components=2, random_state=0)
-    embedding_corpus = np.array([w2v_model.wv[key] for key in set(w2v_model.wv.vocab).intersection(nouns)])
+    embedding_corpus = np.array([w2v_model.wv[key] for key in np.array(closest_words).flatten().tolist()])
     X_embedded = tsne.fit_transform(X=embedding_corpus)
-    ax = sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=labels, legend='full',
+    ax = sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=labels, legend='full', style=labels,
                          palette=palette[:len(set(labels))])
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    for label, x, y in zip(set(w2v_model.wv.vocab).intersection(nouns), X_embedded[:, 0], X_embedded[:, 1]):
+    for label, x, y in zip(np.array(closest_words).flatten().tolist(), X_embedded[:, 0], X_embedded[:, 1]):
         plt.annotate(label, xy=(x, y), xytext=(0, 0), fontsize=6, textcoords='offset points')
-    # plt.xlim(X_embedded[:, 0].min()+0.00005,  X_embedded[:, 0].max()+0.00005)
-    # plt.ylim(X_embedded[:, 1].min()+0.00005, X_embedded[:, 1].max()+0.00005)
-
-    # a = pd.concat({'x': pd.Series(X_embedded[:, 0]), 'y': pd.Series(X_embedded[:, 1]), 'val': pd.Series(np.array(set(w2v_model.wv.index_to_key[:]).intersection(nouns)))}, axis=1)
-    # for i, point in a.iterrows():
-    #     plt.gca().text(point['x']+.02, point['y'], str(point['val']))
     plt.savefig(os.path.join(figure_path, review_type+".png"))
 
 
