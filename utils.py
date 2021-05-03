@@ -77,12 +77,12 @@ def train_gmm_model(w2v_model, nouns, model_path):
             clustering_results[model_name] = gmm
         aic_bic_results[model_name] = [gmm.aic(embedding_corpus), gmm.bic(embedding_corpus)]
         closest_idx, _ = pairwise_distances_argmin_min(gmm.means_, embedding_corpus)
-        closest[model_name] = get_top_10_nearest_points(gmm, w2v_model, list(corpus))
+        closest[model_name] = get_top_20_nearest_points(gmm, w2v_model, list(corpus))
     return clustering_results, aic_bic_results, closest
 
 
-def get_top_10_nearest_points(gmm_model, w2v_model, corpus):
-    top_n = 10
+def get_top_20_nearest_points(gmm_model, w2v_model, corpus):
+    top_n = 20
     w, h = top_n, len(gmm_model.means_)
     top_10 = [[0 for x in range(w)] for y in range(h)]
     for n in range(w):
