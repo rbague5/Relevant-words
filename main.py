@@ -49,7 +49,7 @@ def topic_clustering(data, restaurat_id):
         best_gmm_model = utils.retrieve_best_gmm_model(aic_bic_results)
         probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, closest_words[best_gmm_model])
 
-        utils.perform_tsne(w2v_model, nouns, labels, closest_words[best_gmm_model], os.path.join(figures_path, "topics", str(restaurat_id)), review_type)
+        utils.perform_tsne(w2v_model, labels, closest_words[best_gmm_model], os.path.join(figures_path, "topics", str(restaurat_id)), review_type)
         utils.save_topic_clusters_results(cluster_words, os.path.join(topics_clusters_path, review_type, str(restaurat_id)))
         # print(closest_words[best_gmm_model])
         # print(cluster_words)

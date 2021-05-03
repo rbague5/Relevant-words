@@ -14,7 +14,7 @@ from matplotlib.colors import LogNorm
 
 sns.set(rc={'figure.figsize': (15, 10)})
 sns.set(rc={"figure.dpi":300, 'savefig.dpi':300})
-palette = sns.color_palette("bright", 30)
+palette = sns.color_palette("bright", 50)
 
 
 
@@ -23,7 +23,7 @@ def train_w2v_model(model_path, model_name, corpus):
         os.makedirs(model_path)
     path = os.path.join(model_path, model_name)
     if not os.path.exists(path):
-        model = Word2Vec(corpus, iter=20, min_count=10, size=300, window=5, workers=4, sg=1)
+        model = Word2Vec(corpus, iter=25, min_count=10, size=300, window=5, workers=4, sg=1)
         model.save(path)
     else:
         model = Word2Vec.load(path)
@@ -123,7 +123,7 @@ def retrieve_best_model_results(best_gmm_model_name, trained_models, w2v_model, 
     n_clusters = best_gmm_model_name
     model = trained_models[best_gmm_model_name]
     embedding_corpus = np.array([w2v_model.wv[key] for key in np.array(closest_words).flatten().tolist()])
-    labels = model.predict(embedding_corpus)
+    labels = np.indices(np.array(closest_words).shape)[0].flatten().tolist()
     probabilities = model.score_samples(embedding_corpus)
     # probabilities = normalize(probabilities[:, np.newaxis], axis=0).ravel() #TODO revisar normalización de logProbabilities
     sample = np.array(closest_words).flatten()
@@ -138,9 +138,8 @@ def get_words_by_cluster(sample, labels, n_clusters):
 
 
 # https://towardsdatascience.com/a-beginners-guide-to-word-embedding-with-gensim-word2vec-model-5970fa56cc92
-def perform_tsne(w2v_model, nouns, labels, closest_words, figure_path, review_type):
+def perform_tsne(w2v_model, labels, closest_words, figure_path, review_type):
     plt.figure(figsize=(15, 10))
-    palette = sns.color_palette("bright", 30)
     tsne = TSNE(n_components=2, random_state=0)
     embedding_corpus = np.array([w2v_model.wv[key] for key in np.array(closest_words).flatten().tolist()])
     X_embedded = tsne.fit_transform(X=embedding_corpus)
