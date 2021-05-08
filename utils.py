@@ -1,168 +1,67 @@
+import ast
 import os
-import numpy as np
-import pandas as pd
-import seaborn as sns
-from matplotlib import pyplot as plt
-from gensim.models import Word2Vec
-from sklearn.mixture import GaussianMixture
-from sklearn.metrics import pairwise_distances_argmin_min
-from sklearn.manifold import TSNE
-from sklearn.preprocessing import normalize
-from itertools import repeat
 
+import pandas as pd
+import numpy as np
+import seaborn as sns
+from sklearn.feature_extraction.text import CountVectorizer
+from matplotlib import pyplot as plt
+import math
 
 sns.set(rc={'figure.figsize': (15, 10)})
-sns.set(rc={"figure.dpi":300, 'savefig.dpi':300})
-palette = sns.color_palette("bright", 30)
+sns.set(rc={"figure.dpi": 300, 'savefig.dpi': 300})
+sns.set(font_scale=0.8)
 
 
-def train_w2v_model(model_path, model_name, corpus):
-    if not os.path.exists(model_path):
-        os.makedirs(model_path)
-    path = os.path.join(model_path, model_name)
-    if not os.path.exists(path):
-        model = Word2Vec(corpus, iter=20, min_count=10, size=300, window=5, workers=4, sg=1)
-        model.save(path)
-    else:
-        model = Word2Vec.load(path)
-    return model
-
-def load_w2v_model(model_path, model_name):
-    return Word2Vec.load(os.path.join(model_path, model_name))
-
-
-def save_gmm_model(model_path, model):
-    print("Saving... " + model_path)
-    np.save(model_path + '_weights', model.weights_, allow_pickle=False)
-    np.save(model_path + '_means', model.means_, allow_pickle=False)
-    np.save(model_path + '_covariances', model.covariances_, allow_pickle=False)
+def retrieve_word_frequencies(data):
+    cv = CountVectorizer(min_df=0.10)
+    dict_results = {"restaurantId": [], "word": [], "frequency": []}
+    vectorized_results = cv.fit_transform(data)
+    for restaurant_idx, results in enumerate(vectorized_results):
+        freq = results.data
+        idx_vocabulary = results.indices
+        for i, j in zip(freq, idx_vocabulary):
+            dict_results["restaurantId"].append(data.index[restaurant_idx])
+            dict_results["word"].append(list(cv.vocabulary_.keys())[list(cv.vocabulary_.values()).index(j)])
+            dict_results["frequency"].append(i)
+    res = pd.DataFrame().from_dict(dict_results)
+    res.sort_values(['restaurantId', 'frequency'], ascending=[True, False], inplace=True)
+    return res
 
 
-def load_gmm_model(model_path):
-    print("Loading... " + model_path)
-    means = np.load(model_path + '_means.npy')
-    covar = np.load(model_path + '_covariances.npy')
-    loaded_gmm = GaussianMixture(n_components=len(means), covariance_type='full')
-    loaded_gmm.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(covar))
-    loaded_gmm.weights_ = np.load(model_path + '_weights.npy')
-    loaded_gmm.means_ = means
-    loaded_gmm.covariances_ = covar
-    return loaded_gmm
+def retrieve_word_frequencies_by_review(data):
+    tf_positive = retrieve_word_frequencies(flatten_reviews_by_restaurant(data[data['rating'] >= 30])['nouns'])
+    tf_negative = retrieve_word_frequencies(flatten_reviews_by_restaurant(data[data['rating'] < 30])['nouns'])
+    return tf_positive, tf_negative
 
 
-def model_saved(model_path, model_name):
-    if not os.path.exists(model_path):
-        os.makedirs(model_path)
-    for filename in os.listdir(model_path):
-        if filename.startswith(model_name):
-            return True
-    return False
+def flatten_reviews_by_restaurant(data):
+    data_grouped_by_restaurant = data.groupby('restaurantId').agg(
+        {'nouns': lambda x: [' '.join(ast.literal_eval(w)) for w in list((np.hstack(x)))]})
+    data_grouped_by_restaurant['nouns'] = data_grouped_by_restaurant['nouns'].apply(lambda x: ' '.join(x))
+    return data_grouped_by_restaurant
 
 
-def train_gmm_model(w2v_model, nouns, model_path):
-    clustering_results = {}
-    aic_bic_results = {}
-    closest = {}
-    corpus = set(w2v_model.wv.vocab).intersection(nouns)
-    embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])  # Clustering con los sustantivos
-    for n_clusters in range(2, 10):
-        model_name = str(n_clusters)
-        if not model_saved(model_path, model_name):
-            peaks = retrieve_peaks(n_clusters, w2v_model, corpus)
-            gmm = GaussianMixture(n_components=len(peaks), means_init=peaks).fit(embedding_corpus)
-            clustering_results[model_name] = gmm
-            save_gmm_model(os.path.join(model_path, model_name), gmm)
-        else:
-            gmm = load_gmm_model(os.path.join(model_path, model_name))
-            clustering_results[model_name] = gmm
-        aic_bic_results[model_name] = [gmm.aic(embedding_corpus), gmm.bic(embedding_corpus)]
-        closest_idx, _ = pairwise_distances_argmin_min(gmm.means_, embedding_corpus)
-        closest[model_name] = get_top_20_nearest_points(gmm, w2v_model, list(corpus))
-    return clustering_results, aic_bic_results, closest
-
-
-def get_top_20_nearest_points(gmm_model, w2v_model, corpus):
-    top_n = 20
-    w, h = top_n, len(gmm_model.means_)
-    top_10 = [[0 for x in range(w)] for y in range(h)]
-    for n in range(w):
-        embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])
-        closest_idx, _ = pairwise_distances_argmin_min(gmm_model.means_, embedding_corpus)
-        closest_words = [corpus[idx] for idx in closest_idx.tolist()]
-        for idx, val in enumerate(closest_words):
-            top_10[idx][n] = val
-        corpus = list(filter(lambda x: x not in closest_words, corpus))
-    return top_10
-
-def retrieve_peaks(n_peaks, w2v_model, corpus):
-    peaks = []
-    last_index_found = 0
-    for i in range(n_peaks):
-        while last_index_found < len(w2v_model.wv.vocab):
-            if list(w2v_model.wv.vocab)[last_index_found] in corpus:
-                peaks.append(w2v_model.wv[list(w2v_model.wv.vocab)[last_index_found]])
-                last_index_found += 1
-                break
-            last_index_found += 1
-    return peaks
-
-
-def retrieve_best_gmm_model(aic_bic_results):
-    results_df = pd.DataFrame.from_dict(aic_bic_results, orient='index')
-    results_df.columns = ["aic", "bic"]
-    return results_df[results_df["aic"] == results_df["aic"].min()].index[0]
-
-
-def retrieve_best_model_results(best_gmm_model_name, trained_models, w2v_model, closest_words):
-    n_clusters = best_gmm_model_name
-    model = trained_models[best_gmm_model_name]
-    embedding_corpus = np.array([w2v_model.wv[key] for key in np.array(closest_words).flatten().tolist()])
-    labels = np.indices(np.array(closest_words).shape)[0].flatten().tolist()
-    # labels = model.predict(embedding_corpus)
-    probabilities = model.score_samples(embedding_corpus)
-    # probabilities = normalize(probabilities[:, np.newaxis], axis=0).ravel() #TODO revisar normalización de logProbabilities
-    sample = np.array(closest_words).flatten()
-    return probabilities, get_words_by_cluster(sample, labels, n_clusters), labels
-
-
-def get_words_by_cluster(sample, labels, n_clusters):
-    clusters = {}
-    for id_cluster in range(int(n_clusters)):
-        clusters[id_cluster] = np.array(list(sample))[np.where(labels == id_cluster)[0]]
-    return clusters
-
-
-def perform_tsne(w2v_model, labels, closest_words, figure_path, review_type):
+def generate_histogram(df, figure_path, top_n, y_max, type_review=None):
     plt.figure(figsize=(15, 10))
-    palette = sns.color_palette("bright", 30)
-    tsne = TSNE(n_components=2, random_state=0)
-    embedding_corpus = np.array([w2v_model.wv[key] for key in np.array(closest_words).flatten().tolist()])
-    X_embedded = tsne.fit_transform(X=embedding_corpus)
-    ax = sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=labels, legend='full', style=labels,
-                         palette=palette[:len(set(labels))])
-    if not os.path.exists(figure_path):
-        os.makedirs(figure_path)
+    pallete = "Blues_r"
+    if type_review is not None:
+        if type_review == "positive":
+            pallete = "BuGn_r"
+        elif type_review == "negative":
+            pallete = "OrRd_r"
+    ax = sns.barplot(x="word", y="frequency", data=df[:top_n],
+                     palette=pallete)
+    ax.set_ylabel('count')
+    ax.set_ylim([0, y_max])
+    path = os.path.join(figure_path, str(df['restaurantId'].values[0]))
+    if not os.path.exists(path):
+        os.makedirs(path)
+    filename = type_review if type_review is not None else 'all_reviews'
+    plt.savefig(os.path.join(path, filename+".png"))
 
-    for label, x, y in zip(np.array(closest_words).flatten().tolist(), X_embedded[:, 0], X_embedded[:, 1]):
-        plt.annotate(label, xy=(x, y), xytext=(0, 0), fontsize=6, textcoords='offset points')
-    plt.savefig(os.path.join(figure_path, review_type+".png"))
-
-
-def save_topic_clusters_results(cluster_dict, results_path):
-    if not os.path.exists(results_path):
-        os.makedirs(results_path)
-    for key in cluster_dict:
-        np.save(os.path.join(results_path, str(key) + '.npy'), cluster_dict[key])
+    # https://towardsdatascience.com/a-beginners-guide-to-word-embedding-with-gensim-word2vec-model-5970fa56cc92
 
 
-def load_topic_clustes(results_path):
-    topic_clusters = {}
-    for filename in os.listdir(results_path):
-        topic_clusters[filename.split('.')[0]] = np.load(os.path.join(results_path, filename))
-    return topic_clusters
-
-def get_pdf_by_cluster(probabilities, labels):
-    df = pd.DataFrame({'prob': probabilities, 'label': labels})
-    for idx_cluster in np.unique(labels):
-        sub_df = df[df['label']==idx_cluster]
-        print(np.sum(np.exp(sub_df['prob'])))
+def roundup(x):
+    return 100 + int(math.ceil(x / 100.0)) * 100

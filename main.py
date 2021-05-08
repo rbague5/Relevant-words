@@ -13,7 +13,7 @@ from Preprocessing import load_reviews_df
 
 lower_limit_positive_rating = 30
 upper_limit_negative_rating = 20
-top_n_restaurants = 1
+top_n_restaurants = 5
 w2v_models_path = "./models/word2vec"
 gmm_models_topics_path = "./models/gmm/topics"
 gmm_models_words_path = "./models/gmm/words"
@@ -26,27 +26,18 @@ negative_model_path = os.path.join(w2v_models_path, "negative")
 
 def main():
     data = load_reviews_df("gijon", "reviews")
-    data_grouped_by_restaurant = data.groupby('restaurantId').agg({'nouns': lambda x: [' '.join(ast.literal_eval(w)) for w in list((np.hstack(x)))]})
-    data_grouped_by_restaurant['nouns'] = data_grouped_by_restaurant['nouns'].apply(lambda x : ' '.join(x))
-    retrieve_word_frequencies(data_grouped_by_restaurant['nouns'])
+    # tf_results = utils.retrieve_word_frequencies(utils.flatten_reviews_by_restaurant(data)['nouns'])
+    tf_positive, tf_negative = utils.retrieve_word_frequencies_by_review(data)
+    tf_by_restaurant =  pd.concat([tf_positive, tf_negative], ignore_index=True)
+    most_commented_restaurants = data['restaurantId'].value_counts()
 
-    # word_clustering()
-
-
-def retrieve_word_frequencies(data):
-    cv = CountVectorizer(min_df=0.10)
-    dict_results = {"restaurantId": [], "word": [], "frequency": []}
-    vectorized_results = cv.fit_transform(data)
-    for restaurant_idx, results in enumerate(vectorized_results):
-        freq = results.data
-        idx_vocabulary = results.indices
-        for i, j in zip(freq,idx_vocabulary):
-            dict_results["restaurantId"].append(data.index[restaurant_idx])
-            dict_results["word"].append(list(cv.vocabulary_.keys())[list(cv.vocabulary_.values()).index(j)])
-            dict_results["frequency"].append(i)
-    res = pd.DataFrame().from_dict(dict_results)
-    res.sort_values(['restaurantId','frequency'], ascending=[True,False], inplace=True)
-    print(res)
+    restaurant_ids = most_commented_restaurants.head(top_n_restaurants).index
+    y_max = tf_by_restaurant[tf_by_restaurant['restaurantId'].isin(restaurant_ids)]['frequency'].max()
+    y_max = utils.roundup(y_max)
+    for restaurant_id in most_commented_restaurants.head(top_n_restaurants).index:
+        utils.generate_histogram(tf_by_restaurant[tf_by_restaurant['restaurantId'] == restaurant_id], figures_path, 20, y_max)
+        utils.generate_histogram(tf_positive[tf_positive['restaurantId'] == restaurant_id], figures_path, 20, y_max, "positive")
+        utils.generate_histogram(tf_negative[tf_negative['restaurantId'] == restaurant_id], figures_path, 20, y_max, "negative")
 
 
 if __name__ == "__main__":
