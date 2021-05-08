@@ -1,5 +1,5 @@
 import pandas as pd
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.preprocessing import Binarizer
 from gensim.models import Word2Vec
 import ast
@@ -26,64 +26,35 @@ negative_model_path = os.path.join(w2v_models_path, "negative")
 
 def main():
     data = load_reviews_df("gijon", "reviews")
-    topic_clustering(data)
+    data_grouped_by_restaurant = data.groupby('restaurantId').agg({'nouns': lambda x: [' '.join(ast.literal_eval(w)) for w in list((np.hstack(x)))]})
+    data_grouped_by_restaurant['nouns'] = data_grouped_by_restaurant['nouns'].apply(lambda x : ' '.join(x))
+    retrieve_word_frequencies(data_grouped_by_restaurant['nouns'])
+
     # word_clustering()
 
 
-
-def topic_clustering(data):
-    # Retrieve positive and negative reviews for each restaurantId
-    positive_reviews_data = data[data['rating'] >= lower_limit_positive_rating]
-    negative_reviews_data = data[data['rating'] <= upper_limit_negative_rating]
-
-    corpus_positive = [ast.literal_eval(str_words) for str_words in positive_reviews_data['text'].values]
-    corpus_negative = [ast.literal_eval(str_words) for str_words in negative_reviews_data['text'].values]
-
-    corpus_nouns_positive = [ast.literal_eval(str_words) for str_words in positive_reviews_data['nouns'].values]
-    corpus_nouns_positive = set([item for sublist in corpus_nouns_positive for item in sublist])
-    corpus_nouns_negative = [ast.literal_eval(str_words) for str_words in negative_reviews_data['nouns'].values]
-    corpus_nouns_negative = set([item for sublist in corpus_nouns_negative for item in sublist])
-
-    #Entrenar tanto el modelo para comentario positivos como negativos (por ahora solo los positivos)
-    for review_type in ['positive', 'negative']:
-        corpus = corpus_positive if review_type == 'positive' else corpus_negative
-        w2v_model = utils.train_w2v_model(os.path.join(w2v_models_path), review_type, corpus)
-        nouns = set(corpus_nouns_positive) if review_type == "positive" else set(corpus_nouns_negative)
-        trained_models, aic_bic_results, closest_words = utils.train_gmm_model(w2v_model, nouns, os.path.join(gmm_models_topics_path, review_type))
-        best_gmm_model = utils.retrieve_best_gmm_model(aic_bic_results)
-        probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, closest_words[best_gmm_model])
-
-        utils.perform_tsne(w2v_model, labels, closest_words[best_gmm_model], os.path.join(figures_path, "topics"), review_type)
-        utils.save_topic_clusters_results(cluster_words, os.path.join(topics_clusters_path, review_type))
-        # print(closest_words[best_gmm_model])
-        # print(cluster_words)
-
-def word_clustering():
-    cluster_word_by_review_type = {}
-    for review_type in ['positive', 'negative']:
-        cluster_word_by_review_type[review_type] = []
-        topic_clusters = utils.load_topic_clustes(os.path.join(topics_clusters_path, review_type))
-        w2v_model = utils.load_w2v_model(w2v_models_path, review_type)
-        for idx_cluster, cluster_words in topic_clusters.items():
-            trained_models, aic_bic_results, closest_words = utils.train_gmm_model(w2v_model, set(cluster_words.tolist()), os.path.join(gmm_models_words_path, review_type, "topic_cluster_" + str(idx_cluster)))
-            best_gmm_model = utils.retrieve_best_gmm_model(aic_bic_results)
-            probabilities, cluster_relevant_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, set(cluster_words.tolist()))
-            # cluster_word_by_review_type[review_type].append(cluster_relevant_words)
-            # prob = np.sum(np.exp(probabilities))
-            # utils.get_pdf_by_cluster(probabilities, labels)
-            utils.perform_tsne(w2v_model, set(cluster_words.tolist()), labels, os.path.join(figures_path, "words", review_type), "topic_cluster_"+str(idx_cluster))
-            utils.save_topic_clusters_results(cluster_relevant_words, os.path.join(words_clusters_path, review_type, "topic_cluster_"+str(idx_cluster)))
-
+def retrieve_word_frequencies(data):
+    cv = CountVectorizer(min_df=0.10)
+    dict_results = {"restaurantId": [], "word": [], "frequency": []}
+    vectorized_results = cv.fit_transform(data)
+    for restaurant_idx, results in enumerate(vectorized_results):
+        freq = results.data
+        idx_vocabulary = results.indices
+        for i, j in zip(freq,idx_vocabulary):
+            dict_results["restaurantId"].append(data.index[restaurant_idx])
+            dict_results["word"].append(list(cv.vocabulary_.keys())[list(cv.vocabulary_.values()).index(j)])
+            dict_results["frequency"].append(i)
+    res = pd.DataFrame().from_dict(dict_results)
+    res.sort_values(['restaurantId','frequency'], ascending=[True,False], inplace=True)
+    print(res)
 
 
 if __name__ == "__main__":
     main()
 
-
-#
-# #############################
-# ##### ONE HOT ENCODING ######
-# #############################
+#############################
+##### ONE HOT ENCODING ######
+#############################
 # '''
 # Se recuperan únicamente aquellas palabras que aparecen al menos un 10% de las veces (faltas de ortografías, emojis, etc...)
 # cv.vocabulary_: {"word": idx_vocabulary}
@@ -96,7 +67,7 @@ if __name__ == "__main__":
 #
 # binarizer = Binarizer()
 # corpus_positive_one_hot_enc = binarizer.fit_transform(corpus_positive_enc.toarray())
-#
+
 # corpus_positive = pd.DataFrame(corpus_positive_one_hot_enc)
 # colnames = ["w"+str(i) for i in range(len(cv_pos.vocabulary_))]
 # corpus_positive.columns = colnames
@@ -137,3 +108,17 @@ if __name__ == "__main__":
 # #     k_results[str(clusters)+"_negative"] = gm_negative
 #
 
+
+# import functools
+# import time
+#
+# def timer(func):
+#     @functools.wraps(func)
+#     def wrapper_timer(*args, **kwargs):
+#         tic = time.perf_counter()
+#         value = func(*args, **kwargs)
+#         toc = time.perf_counter()
+#         elapsed_time = toc - tic
+#         print(f"Elapsed time: {elapsed_time:0.4f} seconds")
+#         return value
+#     return wrapper_timer
