@@ -21,7 +21,7 @@ def train_w2v_model(model_path, model_name, corpus):
         os.makedirs(model_path)
     path = os.path.join(model_path, model_name)
     if not os.path.exists(path):
-        model = Word2Vec(corpus, iter=20, min_count=10, size=300, window=5, workers=4, sg=1)
+        model = Word2Vec(corpus, iter=20, min_count=2, size=300, window=5, workers=4, sg=1)
         model.save(path)
     else:
         model = Word2Vec.load(path)
@@ -88,6 +88,8 @@ def get_top_20_nearest_points(gmm_model, w2v_model, corpus):
     top_10 = [[0 for x in range(w)] for y in range(h)]
     for n in range(w):
         embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])
+        if len(embedding_corpus) == 0:
+            break
         closest_idx, _ = pairwise_distances_argmin_min(gmm_model.means_, embedding_corpus)
         closest_words = [corpus[idx] for idx in closest_idx.tolist()]
         for idx, val in enumerate(closest_words):
