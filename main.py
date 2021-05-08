@@ -13,7 +13,7 @@ from Preprocessing import load_reviews_df
 
 lower_limit_positive_rating = 30
 upper_limit_negative_rating = 20
-top_n_restaurants = 1
+top_n_restaurants = 5
 w2v_models_path = "./models/word2vec"
 gmm_models_topics_path = "./models/gmm/topics"
 gmm_models_words_path = "./models/gmm/words"
