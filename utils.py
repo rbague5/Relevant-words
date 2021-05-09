@@ -66,7 +66,7 @@ def train_gmm_model(w2v_model, nouns, model_path):
     closest = {}
     corpus = set(w2v_model.wv.vocab).intersection(nouns)
     embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])  # Clustering con los sustantivos
-    for n_clusters in range(2, 10):
+    for n_clusters in range(2, 15):
         model_name = str(n_clusters)
         if not model_saved(model_path, model_name):
             peaks = retrieve_peaks(n_clusters, w2v_model, corpus)
@@ -78,14 +78,14 @@ def train_gmm_model(w2v_model, nouns, model_path):
             clustering_results[model_name] = gmm
         aic_bic_results[model_name] = [gmm.aic(embedding_corpus), gmm.bic(embedding_corpus)]
         closest_idx, _ = pairwise_distances_argmin_min(gmm.means_, embedding_corpus)
-        closest[model_name] = get_top_20_nearest_points(gmm, w2v_model, list(corpus))
+        closest[model_name] = get_top_n_nearest_points(gmm, w2v_model, list(corpus))
     return clustering_results, aic_bic_results, closest
 
 
-def get_top_20_nearest_points(gmm_model, w2v_model, corpus):
-    top_n = 20
+def get_top_n_nearest_points(gmm_model, w2v_model, corpus):
+    top_n = 10
     w, h = top_n, len(gmm_model.means_)
-    top_10 = [[0 for x in range(w)] for y in range(h)]
+    top_n_list = [[0 for x in range(w)] for y in range(h)]
     for n in range(w):
         embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])
         if len(embedding_corpus) == 0:
@@ -93,17 +93,19 @@ def get_top_20_nearest_points(gmm_model, w2v_model, corpus):
         closest_idx, _ = pairwise_distances_argmin_min(gmm_model.means_, embedding_corpus)
         closest_words = [corpus[idx] for idx in closest_idx.tolist()]
         for idx, val in enumerate(closest_words):
-            top_10[idx][n] = val
+            top_n_list[idx][n] = val
         corpus = list(filter(lambda x: x not in closest_words, corpus))
-    return top_10
+    return top_n_list
 
 def retrieve_peaks(n_peaks, w2v_model, corpus):
     peaks = []
     last_index_found = 0
     for i in range(n_peaks):
         while last_index_found < len(w2v_model.wv.vocab):
-            if list(w2v_model.wv.vocab)[last_index_found] in corpus:
-                peaks.append(w2v_model.wv[list(w2v_model.wv.vocab)[last_index_found]])
+            candidate_peak = w2v_model.wv.index2word[last_index_found]
+            if candidate_peak in corpus:
+                peaks.append(w2v_model.wv[candidate_peak])
+                print(candidate_peak)
                 last_index_found += 1
                 break
             last_index_found += 1
