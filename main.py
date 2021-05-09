@@ -6,7 +6,7 @@ from Preprocessing import load_reviews_df
 
 lower_limit_positive_rating = 30
 upper_limit_negative_rating = 20
-top_n_restaurants = 1
+top_n_restaurants = 5
 w2v_models_path = "./models/word2vec"
 gmm_models_topics_path = "./models/gmm/topics"
 gmm_models_words_path = "./models/gmm/words"
@@ -20,7 +20,7 @@ negative_model_path = os.path.join(w2v_models_path, "negative")
 def main():
     data = load_reviews_df("gijon", "reviews")
     most_commented_restaurants = data['restaurantId'].value_counts()
-    for restaurant_id in most_commented_restaurants.head(1).index:
+    for restaurant_id in most_commented_restaurants.head(top_n_restaurants).index:
         topic_clustering(data, restaurant_id)
         # word_clustering()
 
@@ -45,7 +45,7 @@ def topic_clustering(data, restaurat_id):
         corpus = corpus_positive if review_type == 'positive' else corpus_negative
         w2v_model = utils.train_w2v_model(os.path.join(w2v_models_path, str(restaurat_id)), review_type, corpus)
         nouns = set(corpus_nouns_positive) if review_type == "positive" else set(corpus_nouns_negative)
-        trained_models, aic_bic_results, closest_words = utils.train_gmm_model(w2v_model, nouns, os.path.join(gmm_models_topics_path, review_type))
+        trained_models, aic_bic_results, closest_words = utils.train_gmm_model(w2v_model, nouns, os.path.join(gmm_models_topics_path, str(restaurat_id), review_type))
         best_gmm_model = utils.retrieve_best_gmm_model(aic_bic_results)
         probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, closest_words[best_gmm_model])
 

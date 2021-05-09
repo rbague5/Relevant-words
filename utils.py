@@ -23,7 +23,7 @@ def train_w2v_model(model_path, model_name, corpus):
         os.makedirs(model_path)
     path = os.path.join(model_path, model_name)
     if not os.path.exists(path):
-        model = Word2Vec(corpus, iter=25, min_count=10, size=300, window=5, workers=4, sg=1)
+        model = Word2Vec(corpus, iter=25, min_count=2, size=300, window=5, workers=4, sg=1)
         model.save(path)
     else:
         model = Word2Vec.load(path)
@@ -68,7 +68,7 @@ def train_gmm_model(w2v_model, nouns, model_path):
     corpus = set(w2v_model.wv.vocab).intersection(nouns)
     rich_corpus = enrich_corpus(corpus, w2v_model)
     embedding_corpus = np.array([w2v_model.wv[key] for key in rich_corpus])  # Clustering con los sustantivos
-    for n_clusters in range(10, 60, 10):
+    for n_clusters in range(2, 10):
         model_name = str(n_clusters)
         if not model_saved(model_path, model_name):
             peaks = retrieve_peaks(n_clusters, w2v_model, corpus)
@@ -105,8 +105,10 @@ def retrieve_peaks(n_peaks, w2v_model, corpus):
     last_index_found = 0
     for i in range(n_peaks):
         while last_index_found < len(w2v_model.wv.vocab):
-            if list(w2v_model.wv.vocab)[last_index_found] in corpus:
-                peaks.append(w2v_model.wv[list(w2v_model.wv.vocab)[last_index_found]])
+            candidate_peak = w2v_model.wv.index2word[last_index_found]
+            if candidate_peak in corpus:
+                peaks.append(w2v_model.wv[candidate_peak])
+                print(candidate_peak)
                 last_index_found += 1
                 break
             last_index_found += 1
