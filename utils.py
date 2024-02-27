@@ -1,4 +1,7 @@
+import logging
 import os
+import sys
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -9,6 +12,20 @@ from sklearn.metrics import pairwise_distances_argmin_min
 from sklearn.manifold import TSNE
 sns.set(rc={'figure.figsize': (11.7, 8.27)})
 palette = sns.color_palette("bright", 10)
+
+
+def instantiate_logger():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+
+    return logger
+
+
+logger = instantiate_logger()
 
 
 def train_w2v_model(model_path, model_name, corpus):
@@ -24,14 +41,14 @@ def train_w2v_model(model_path, model_name, corpus):
 
 
 def save_gmm_model(model_path, model):
-    print("Saving... " + model_path)
+    logger.info("Saving... " + model_path)
     np.save(model_path + '_weights', model.weights_, allow_pickle=False)
     np.save(model_path + '_means', model.means_, allow_pickle=False)
     np.save(model_path + '_covariances', model.covariances_, allow_pickle=False)
 
 
 def load_gmm_model(model_path):
-    print("Loading... " + model_path)
+    logger.info("Loading... " + model_path)
     means = np.load(model_path + '_means.npy')
     covar = np.load(model_path + '_covariances.npy')
     loaded_gmm = GaussianMixture(n_components=len(means), covariance_type='full')
@@ -43,6 +60,8 @@ def load_gmm_model(model_path):
 
 
 def model_saved(model_path, model_name):
+    if not os.path.exists(model_path):
+        os.makedirs(model_path)
     for filename in os.listdir(model_path):
         if filename.startswith(model_name):
             return True
@@ -127,7 +146,6 @@ def perform_tsne(w2v_model, nouns, labels, figure_path):
     # for i, point in a.iterrows():
     #     plt.gca().text(point['x']+.02, point['y'], str(point['val']))
     plt.savefig(os.path.join(figure_path, "topics.png"))
-
 
 
 def save_topic_clusters_results(cluster_dict, results_path):

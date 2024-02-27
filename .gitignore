@@ -3,4 +3,5 @@ results/
 dataset/
 *.npy
 .idea
+./venv
 venv
