@@ -3,27 +3,22 @@ import json
 import logging
 import math
 import os
+from collections import defaultdict, Counter
 
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from itertools import combinations
 from matplotlib import pyplot as plt
-from gensim.models import Word2Vec
 from sklearn.mixture import GaussianMixture
-from sklearn.metrics import pairwise_distances_argmin_min
-from sklearn.metrics import (
-    silhouette_score,
-    calinski_harabasz_score,
-    davies_bouldin_score,
-    pairwise_distances,
-)
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score, pairwise_distances
 from sklearn.manifold import TSNE
 from sklearn.feature_extraction.text import CountVectorizer
-from scipy.spatial.distance import cdist
-
-from callback import MonitorLoss
 from config import rating_threshold, top_n_nearest_points
+from gensim.models import Word2Vec, KeyedVectors
+import gensim.downloader as api
+from nltk.corpus import wordnet as wn
+
+_model_cache = {}  # Global model cache
 
 sns.set(rc={"figure.figsize": (11.7, 8.27)})
 palette = sns.color_palette("bright", 10)
@@ -95,27 +90,69 @@ def load_w2v_model(model_path, model_name):
     return Word2Vec.load(os.path.join(model_path, model_name))
 
 
-def train_w2v_model(model_path, model_name, corpus):
-    if not os.path.exists(model_path):
-        os.makedirs(model_path)
-    path = os.path.join(model_path, model_name)
-    if not os.path.exists(path):
-        monitor_loss = MonitorLoss()
-        model = Word2Vec(
-            sentences=corpus,
-            vector_size=100,
-            window=5,
-            min_count=2,
-            workers=4,
-            sg=1,
-            epochs=20,
-            compute_loss=True,  # Enable loss computation
-            callbacks=[monitor_loss],
-        )
-        model.save(path)
+def train_or_load_embedding_model(model_name, model_path=None, corpus=None):
+    global _model_cache
+
+    logger.info(f"Using model: {model_name}")
+
+    # Ensure a valid path is provided, otherwise default to the downloaded models path
+    downloaded_models_path = model_path or "./models/"
+    if not os.path.exists(downloaded_models_path):
+        os.makedirs(downloaded_models_path)
+
+    if model_name in _model_cache:
+        return _model_cache[model_name]
+
+    if model_name.lower() == "word2vec":
+        path = os.path.join(downloaded_models_path, model_name)
+
+        if not os.path.exists(path):
+            if corpus is None:
+                raise ValueError("Corpus is required to train Word2Vec.")
+            monitor_loss = MonitorLoss()
+            model = Word2Vec(
+                sentences=corpus,
+                vector_size=100,
+                window=5,
+                min_count=2,
+                workers=4,
+                sg=1,
+                epochs=20,
+                compute_loss=True,
+                callbacks=[monitor_loss],
+            )
+            model.save(path)
+        else:
+            model = Word2Vec.load(path)
+
+    elif model_name.lower() == "fasttext":
+        path = os.path.join(downloaded_models_path, "fasttext-wiki-news-subwords-300")
+
+        # Check if pre-trained model is not in the local directory and download it
+        if not os.path.exists(path):
+            logger.info("Downloading FastText model...")
+            model = api.load("fasttext-wiki-news-subwords-300")  # returns KeyedVectors
+            model.save(path)
+        else:
+            model = KeyedVectors.load(path)
+
+    elif model_name.lower() == "google":
+        path = os.path.join(downloaded_models_path, "word2vec-google-news-300")
+
+        # Check if pre-trained model is not in the local directory and download it
+        if not os.path.exists(path):
+            logger.info("Downloading Google News Word2Vec model...")
+            model = api.load("word2vec-google-news-300")  # returns KeyedVectors
+            model.save(path)
+        else:
+            model = KeyedVectors.load(path)
+
     else:
-        model = Word2Vec.load(path)
+        raise ValueError(f"Unsupported model name: {model_name}")
+
+    _model_cache[model_name] = model
     return model
+
 
 
 def save_gmm_model(model_path, model):
@@ -171,104 +208,32 @@ def find_elbow_point(scores):
 
 
 def get_top_n_nearest_points(gmm_model, w2v_model, corpus, n_points):
-    w, h = n_points, len(gmm_model.means_)
-    top_n_list = [[0 for x in range(w)] for y in range(h)]
-    for n in range(w):
-        embedding_corpus = np.array([w2v_model.wv[key] for key in corpus])
-        if len(embedding_corpus) == 0:
-            break
-        closest_idx, _ = pairwise_distances_argmin_min(
-            gmm_model.means_, embedding_corpus
-        )
-        closest_words = [corpus[idx] for idx in closest_idx.tolist()]
-        for idx, val in enumerate(closest_words):
-            top_n_list[idx][n] = val
-        corpus = list(filter(lambda x: x not in closest_words, corpus))
+    # Usar la interfaz correcta
+    keyed_vectors = w2v_model.wv if hasattr(w2v_model, 'wv') else w2v_model
+
+    # Filtrar palabras fuera del vocabulario
+    valid_corpus = [word for word in corpus if word in keyed_vectors]
+    if not valid_corpus:
+        return []
+
+    word_vectors = np.array([keyed_vectors[word] for word in valid_corpus])
+    distances = pairwise_distances(gmm_model.means_, word_vectors)  # shape: (n_clusters, n_words)
+
+    used_words = set()
+    top_n_list = []
+
+    for cluster_distances in distances:
+        cluster_words = []
+        for idx in np.argsort(cluster_distances):
+            if valid_corpus[idx] not in used_words:
+                cluster_words.append(valid_corpus[idx])
+                used_words.add(valid_corpus[idx])
+            if len(cluster_words) >= n_points:
+                break
+        top_n_list.append(cluster_words)
+
     return top_n_list
 
-
-def calculate_semantic_coherence(w2v_model, gmm, corpus_words, top_n=5):
-    coherence_scores = []
-    for idx in range(len(gmm.means_)):
-        cluster_words = get_top_n_nearest_points(gmm, w2v_model, corpus_words, top_n)[
-            idx
-        ]
-        similarities = []
-        for word1, word2 in combinations(cluster_words, 2):
-            if word1 in w2v_model.wv and word2 in w2v_model.wv:
-                sim = w2v_model.wv.similarity(word1, word2)
-                similarities.append(sim)
-        coherence_scores.append(np.mean(similarities) if similarities else 0)
-    return np.mean(coherence_scores)
-
-
-def calculate_perplexity(gmm):
-    # Perplexity is a commonly used metric for language models; for GMMs, it can be adapted
-    # as the exponential of the average negative log-likelihood.
-    log_likelihood = gmm.score(
-        gmm.means_
-    )  # Mean of each component as representative point
-    return np.exp(-log_likelihood)
-
-
-def calculate_topic_diversity(w2v_model, gmm, corpus, top_n_words):
-    unique_words = set()
-    total_words = 0
-    for idx in range(len(gmm.means_)):
-        cluster_words = get_top_n_nearest_points(gmm, w2v_model, corpus, top_n_words)[
-            idx
-        ]
-        unique_words.update(cluster_words)
-        total_words += len(cluster_words)
-    return len(unique_words) / total_words if total_words > 0 else 0
-
-
-def calculate_intra_distances(gmm, embedding_corpus):
-    intra_distances = []
-    for i, mean1 in enumerate(gmm.means_):
-        intra_distances.append(np.mean(pairwise_distances(embedding_corpus, [mean1])))
-
-    return np.mean(intra_distances)
-
-
-def calculate_inter_distances(gmm, embedding_corpus):
-    inter_distances = []
-    for i, mean1 in enumerate(gmm.means_):
-        for j, mean2 in enumerate(gmm.means_):
-            if i < j:
-                inter_distances.append(np.linalg.norm(mean1 - mean2))
-    return np.mean(inter_distances)
-
-
-def calculate_npmi(gmm, corpus_words, w2v_model, top_n=10):
-    npmi_scores = []
-    total_word_count = sum(
-        w2v_model.wv.get_vecattr(word, "count")
-        for word in corpus_words
-        if word in w2v_model.wv
-    )
-
-    for idx in range(len(gmm.means_)):
-        cluster_words = get_top_n_nearest_points(gmm, w2v_model, corpus_words, top_n)[
-            idx
-        ]
-        pair_scores = []
-        for word1, word2 in combinations(cluster_words, 2):
-            if word1 in w2v_model.wv and word2 in w2v_model.wv:
-                # Calculate probabilities based on word frequency
-                p_word1 = w2v_model.wv.get_vecattr(word1, "count") / total_word_count
-                p_word2 = w2v_model.wv.get_vecattr(word2, "count") / total_word_count
-                p_word1_word2 = w2v_model.wv.similarity(word1, word2)
-
-                if p_word1 > 0 and p_word2 > 0 and p_word1_word2 > 0:
-                    npmi = np.log(p_word1_word2 / (p_word1 * p_word2)) / -np.log(
-                        p_word1_word2
-                    )
-                    pair_scores.append(npmi)
-
-        npmi_scores.append(np.mean(pair_scores) if pair_scores else 0)
-
-    return np.mean(npmi_scores)
 
 
 def select_best_clusters(cluster_metrics):
@@ -287,31 +252,37 @@ def select_best_clusters(cluster_metrics):
     """
     best_clusters = {}
 
-    # Find the best cluster for each metric
-    for metric in [
-        "aic",
-        "bic",
-        "davies_bouldin_score",
-        "perplexity",
-        "intra_distance",
-    ]:
-        # For these metrics, we want the minimum value
-        best_clusters[metric] = min(
-            cluster_metrics, key=lambda x: cluster_metrics[x][metric]
-        )
+    # List of metrics with the expected operation (min or max)
+    min_metrics = ["aic", "bic", "davies_bouldin_score", "perplexity", "intra_distance"]
+    max_metrics = ["silhouette_score", "calinski_harabasz_score", "semantic_coherence", "topic_diversity",
+                   "inter_distance", "npmi", "scci"]
 
-    for metric in [
-        "silhouette_score",
-        "calinski_harabasz_score",
-        "semantic_coherence",
-        "topic_diversity",
-        "inter_distance",
-        "npmi",
-    ]:
-        # For these metrics, we want the maximum value
-        best_clusters[metric] = max(
-            cluster_metrics, key=lambda x: cluster_metrics[x][metric]
-        )
+    # Find the best cluster for each min-metric
+    for metric in min_metrics:
+        # Prepare a list of clusters that have the current metric and its value is not None
+        valid_clusters = [
+            cluster for cluster in cluster_metrics
+            if metric in cluster_metrics[cluster] and cluster_metrics[cluster][metric] is not None
+        ]
+
+        if valid_clusters:
+            best_cluster = min(valid_clusters, key=lambda x: cluster_metrics[x][metric])
+            best_clusters[metric] = best_cluster
+        else:
+            best_clusters[metric] = None
+
+    # Find the best cluster for each max-metric
+    for metric in max_metrics:
+        valid_clusters = [
+            cluster for cluster in cluster_metrics
+            if metric in cluster_metrics[cluster] and cluster_metrics[cluster][metric] is not None
+        ]
+
+        if valid_clusters:
+            best_cluster = max(valid_clusters, key=lambda x: cluster_metrics[x][metric])
+            best_clusters[metric] = best_cluster
+        else:
+            best_clusters[metric] = None
 
     return best_clusters
 
@@ -353,81 +324,74 @@ def select_overall_best_cluster(cluster_metrics, weights=None):
     return max(overall_scores, key=overall_scores.get)
 
 
-def train_gmm_model(w2v_model, nouns, model_path, n_clusters_range=range(2, 10)):
+def train_gmm_model(w2v_model, nouns, model_path, n_clusters_range=range(3, 10), top_n_points=10):
+    from metrics import calculate_semantic_coherence, calculate_intra_distances, calculate_inter_distances, calculate_npmi, calculate_scci
+
     clustering_results = {}
     cluster_metrics = {}
     closest = {}
-    corpus = set(w2v_model.wv.index_to_key[:]).intersection(nouns)
-    embedding_corpus = np.array(
-        [w2v_model.wv[key] for key in corpus]
-    )  # Clustering con los sustantivos
+
+    # Obtener KeyedVectors independientemente del tipo de modelo
+    keyed_vectors = w2v_model.wv if hasattr(w2v_model, 'wv') else w2v_model
+
+    # Filtrar sustantivos presentes en el vocabulario
+    corpus = sorted(set(keyed_vectors.index_to_key).intersection(nouns))
+    embedding_corpus = np.array([keyed_vectors[word] for word in corpus])
 
     for n_clusters in n_clusters_range:
         model_name = str(n_clusters)
-        if not model_saved(model_path, model_name):
-            peaks = retrieve_peaks(n_clusters, w2v_model, corpus)
-            gmm = GaussianMixture(n_components=len(peaks), means_init=peaks).fit(
-                embedding_corpus
-            )
-            clustering_results[model_name] = gmm
-            save_gmm_model(os.path.join(model_path, model_name), gmm)
-        else:
-            gmm = load_gmm_model(os.path.join(model_path, model_name))
-            clustering_results[model_name] = gmm
+        model_file_path = os.path.join(model_path, model_name)
 
-        top_n_closest_words = get_top_n_nearest_points(
-            gmm, w2v_model, list(corpus), top_n_nearest_points
-        )
-        labels = gmm.predict(embedding_corpus)  # Get cluster labels
+        if not model_saved(model_path, model_name):
+            peaks = retrieve_peaks(n_clusters, keyed_vectors, corpus)
+            gmm = GaussianMixture(n_components=n_clusters, means_init=peaks, random_state=42)
+            gmm.fit(embedding_corpus)
+            save_gmm_model(model_file_path, gmm)
+        else:
+            gmm = load_gmm_model(model_file_path)
+
+        clustering_results[model_name] = gmm
+
+        labels = gmm.predict(embedding_corpus)
+        top_n_closest_words = get_top_n_nearest_points(gmm, keyed_vectors, corpus, top_n_points)
 
         closest[model_name] = top_n_closest_words
 
-        cluster_metrics[model_name] = {
-            "aic": gmm.aic(embedding_corpus),
-            "bic": gmm.bic(embedding_corpus),
-            "silhouette_score": (
-                silhouette_score(embedding_corpus, labels)
-                if len(set(labels)) > 1
-                else None
-            ),
-            "calinski_harabasz_score": (
-                calinski_harabasz_score(embedding_corpus, labels)
-                if len(set(labels)) > 1
-                else None
-            ),
-            "davies_bouldin_score": (
-                davies_bouldin_score(embedding_corpus, labels)
-                if len(set(labels)) > 1
-                else None
-            ),
-            "semantic_coherence": calculate_semantic_coherence(
-                w2v_model, gmm, list(corpus), top_n_nearest_points
-            ),
-            "perplexity": calculate_perplexity(gmm),
-            "topic_diversity": calculate_topic_diversity(
-                w2v_model, gmm, list(corpus), top_n_nearest_points
-            ),
+        metrics = {
+            "silhouette_score": silhouette_score(embedding_corpus, labels) if len(set(labels)) > 1 else None,
+            "semantic_coherence": calculate_semantic_coherence(keyed_vectors, gmm, corpus, top_n_points),
             "intra_distance": calculate_intra_distances(gmm, embedding_corpus),
             "inter_distance": calculate_inter_distances(gmm, embedding_corpus),
-            "npmi": calculate_npmi(gmm, list(corpus), w2v_model),
+            "npmi": calculate_npmi(gmm, corpus, keyed_vectors),
+            "scci": calculate_scci(embedding_corpus, labels)
         }
 
-        logger.info(f"Cluster {model_name} metrics: {cluster_metrics[model_name]}")
+        cluster_metrics[model_name] = metrics
+        logger.info(f"Cluster {model_name} metrics: {metrics}")
 
     return clustering_results, cluster_metrics, closest
 
 
-def retrieve_peaks(n_peaks, w2v_model, corpus):
+def retrieve_peaks(n_peaks, embedding_model, corpus):
     peaks = []
+
+    # Usar el acceso correcto dependiendo del tipo de modelo
+    if hasattr(embedding_model, 'wv'):
+        keyed_vectors = embedding_model.wv
+    else:
+        keyed_vectors = embedding_model
+
     last_index_found = 0
+    index_keys = keyed_vectors.index_to_key
+
     for i in range(n_peaks):
-        while last_index_found < len(w2v_model.wv.index_to_key):
-            candidate_peak = w2v_model.wv.index_to_key[last_index_found]
+        while last_index_found < len(index_keys):
+            candidate_peak = index_keys[last_index_found]
+            last_index_found += 1  # Mover fuera del if para evitar repetir
             if candidate_peak in corpus:
-                peaks.append(w2v_model.wv[candidate_peak])
-                last_index_found += 1
+                peaks.append(keyed_vectors[candidate_peak])
                 break
-            last_index_found += 1
+
     return peaks
 
 
@@ -437,20 +401,35 @@ def retrieve_best_gmm_model(aic_bic_results):
     return results_df[results_df["aic"] == results_df["aic"].min()].index[0]
 
 
-def retrieve_best_model_results(
-    best_gmm_model_name, trained_models, w2v_model, closest_words
-):
-    n_clusters = best_gmm_model_name
+def retrieve_best_model_results(best_gmm_model_name, trained_models, w2v_model, closest_words):
     model = trained_models[best_gmm_model_name]
-    embedding_corpus = np.array(
-        [w2v_model.wv[key] for key in np.array(closest_words).flatten().tolist()]
-    )
-    labels = np.indices(np.array(closest_words).shape)[0].flatten().tolist()
-    # labels = model.predict(embedding_corpus)
+    n_clusters = len(model.means_)
+
+    # Obtener vectorizador adecuado
+    if hasattr(w2v_model, 'wv'):
+        keyed_vectors = w2v_model.wv
+    else:
+        keyed_vectors = w2v_model
+
+    # Flatten + filtrar palabras fuera del vocabulario
+    flat_words = [word for word in np.array(closest_words).flatten().tolist() if word in keyed_vectors]
+    if not flat_words:
+        raise ValueError("No valid words found in the model vocabulary.")
+
+    # Embeddings y etiquetas
+    embedding_corpus = np.array([keyed_vectors[word] for word in flat_words])
+    labels = np.indices(np.array(closest_words).shape)[0].flatten().tolist()[:len(embedding_corpus)]
+
+    # Predicción de probabilidad logarítmica por muestra
     probabilities = model.score_samples(embedding_corpus)
-    # probabilities = normalize(probabilities[:, np.newaxis], axis=0).ravel() #TODO revisar normalización de logProbabilities
-    sample = np.array(closest_words).flatten()
-    return probabilities, get_words_by_cluster(sample, labels, n_clusters), labels
+
+    # Alternativa: cluster real de cada punto
+    # labels = model.predict(embedding_corpus)
+
+    # Resultado agrupado por clusters
+    clustered_words = get_words_by_cluster(flat_words, labels, n_clusters)
+
+    return probabilities, clustered_words, labels
 
 
 def save_cluster_metrics(metrics, file_path):
@@ -490,57 +469,97 @@ def get_words_by_cluster(sample, labels, n_clusters):
     return clusters
 
 
-# def perform_tsne(w2v_model, nouns, labels, figure_path):
-#     plt.figure(figsize=(15, 10))
-#     palette = sns.color_palette("bright", 10)
-#     tsne = TSNE(n_components=2, random_state=0)
-#     embedding_corpus = np.array([w2v_model.wv[key] for key in set(w2v_model.wv.index_to_key[:]).intersection(nouns)])
-#     X_embedded = tsne.fit_transform(X=embedding_corpus)
-#     ax = sns.scatterplot(x=X_embedded[:, 0], y=X_embedded[:, 1], hue=labels, legend='full',
-#                          palette=palette[:len(set(labels))])
-#     if not os.path.exists(figure_path):
-#         os.makedirs(figure_path)
-#     a = pd.concat({'x': pd.Series(X_embedded[:, 0]), 'y': pd.Series(X_embedded[:, 1]), 'val': pd.Series(np.array(set(w2v_model.wv.index_to_key[:]).intersection(nouns)))}, axis=1)
-#     for i, point in a.iterrows():
-#         plt.gca().text(point['x']+.02, point['y'], str(point['val']))
-#     plt.savefig(os.path.join(figure_path, "topics.png"))
-def perform_tsne(w2v_model, labels, closest_words, figure_path, review_type):
-    plt.figure(figsize=(15, 10))
-    palette = sns.color_palette("bright", 30)
+def perform_tsne(w2v_model, labels, closest_words, figure_path, review_type, metric, n_iter=3000):
+    # Soporte para modelos con o sin `.wv`
+    keyed_vectors = w2v_model.wv if hasattr(w2v_model, "wv") else w2v_model
 
-    embedding_corpus = np.array(
-        [w2v_model.wv[key] for key in np.array(closest_words).flatten().tolist()]
-    )
-    perplexity = min(30, len(embedding_corpus) - 1)
-    tsne = TSNE(n_components=2, random_state=0, perplexity=perplexity)
+    # Filtrar palabras válidas (en el vocabulario)
+    flat_words = np.array(closest_words).flatten().tolist()
+    filtered = [(word, keyed_vectors[word]) for word in flat_words if word in keyed_vectors]
+
+    if not filtered:
+        raise ValueError("No valid words found in the model vocabulary.")
+
+    words, embeddings = zip(*filtered)
+    embedding_corpus = np.array(embeddings)
+
+    # Asegurar que perplexity sea válida
+    n_samples = len(embedding_corpus)
+    perplexity = min(max(5, n_samples // 3), 30)
+
+    # t-SNE
+    tsne = TSNE(n_components=2, n_iter=n_iter, random_state=42, perplexity=perplexity)
     X_embedded = tsne.fit_transform(X=embedding_corpus)
+
+    # Configuración de gráfico
+    plt.figure(figsize=(15, 10))
+    palette = sns.color_palette("bright", max(len(set(labels)), 10))
+
     sns.scatterplot(
         x=X_embedded[:, 0],
         y=X_embedded[:, 1],
-        hue=labels,
+        hue=labels[:n_samples],
+        palette=palette[:len(set(labels))],
         legend="full",
-        style=labels,
-        palette=palette[: len(set(labels))],
+        style=labels[:n_samples],
     )
 
-    if not os.path.exists(figure_path):
-        os.makedirs(figure_path)
+    # Crear carpeta si no existe
+    os.makedirs(figure_path, exist_ok=True)
 
-    for label, x, y in zip(
-        np.array(closest_words).flatten().tolist(), X_embedded[:, 0], X_embedded[:, 1]
-    ):
-        plt.annotate(
-            label, xy=(x, y), xytext=(0, 0), fontsize=10, textcoords="offset points"
-        )
-    plt.savefig(os.path.join(figure_path, review_type + ".png"))
+    # Anotar cada punto
+    for label, x, y in zip(words, X_embedded[:, 0], X_embedded[:, 1]):
+        plt.annotate(label, xy=(x, y), xytext=(0, 0), fontsize=9, textcoords="offset points")
+
+    fig_path = figure_path + metric + "_" + review_type + "_" + f"{str(len(set(labels)))}.png"
+    # Guardar figura
+    plt.tight_layout()
+    plt.savefig(fig_path)
     plt.close()
+    # Filter perplexities valid for this dataset
+    # valid_perplexities = [p for p in [5,15,30,50] if p < n_samples]
+    #
+    # if not valid_perplexities:
+    #     raise ValueError(f"No valid perplexities for n_samples={n_samples}")
+    #
+    # # Optional: generate a t-SNE plot for each perplexity
+    # for perplexity in valid_perplexities:
+    #     tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity, n_iter=n_iter)
+    #     X_embedded = tsne.fit_transform(X=embedding_corpus)
+    #
+    #     plt.figure(figsize=(15, 10))
+    #     palette = sns.color_palette("bright", max(len(set(labels)), 10))
+    #
+    #     sns.scatterplot(
+    #         x=X_embedded[:, 0],
+    #         y=X_embedded[:, 1],
+    #         hue=labels[:n_samples],
+    #         palette=palette[:len(set(labels))],
+    #         legend="full",
+    #         style=labels[:n_samples],
+    #     )
+    #
+    #     # # Annotate points
+    #     # for label, x, y in zip(words, X_embedded[:, 0], X_embedded[:, 1]):
+    #     #     plt.annotate(label, xy=(x, y), xytext=(2, 2), fontsize=9, textcoords="offset points")
+    #
+    #     os.makedirs(figure_path, exist_ok=True)
+    #     plt.title(f"t-SNE Visualization (perplexity={perplexity}, n_iter={n_iter}) - {review_type} ({metric})")
+    #     plt.savefig(os.path.join(figure_path, f"tsne_{review_type}_{metric}_perp{perplexity}.png"))
+    #     plt.close()
 
-
-def save_topic_clusters_results(cluster_dict, results_path):
+def save_topic_clusters_results(cluster_dict, results_path, class_review, metric):
     if not os.path.exists(results_path):
         os.makedirs(results_path)
-    for key in cluster_dict:
-        np.save(os.path.join(results_path, str(key) + ".npy"), cluster_dict[key])
+
+    for key, words in cluster_dict.items():
+        file_path = os.path.join(results_path, metric + "_" + class_review)
+        if not os.path.exists(file_path):
+            os.makedirs(file_path)
+
+        with open(os.path.join(file_path, f"{key}.txt"), 'w') as f:
+            for word in words:
+                f.write(f"{word}\n")
 
 
 def generate_histogram(df, figure_path, top_n, y_max, type_review=None):
@@ -582,7 +601,5 @@ def get_pdf_by_cluster(probabilities, labels):
 def load_topic_clustes(results_path):
     topic_clusters = {}
     for filename in os.listdir(results_path):
-        topic_clusters[filename.split(".")[0]] = np.load(
-            os.path.join(results_path, filename)
-        )
+        topic_clusters[filename.split(".")[0]] = np.load(os.path.join(results_path, filename))
     return topic_clusters

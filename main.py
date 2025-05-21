@@ -1,23 +1,25 @@
+from itertools import chain
+
 import utils
 from config import *
 from utils import logger
 import pandas as pd
 import ast
 import os
-
+from nltk.corpus import words
 from preprocessing import load_reviews_df, load_items_df, load_users_df
 
 
 def main_analysis_by_city(data, city):
-    logger.info(f"Doing topic clustering")
-    topic_clustering_by_city(data, city)
+    logger.info(f"Doing topic clustering for city: {city}")
+    topic_clustering(data, city)
 
 
-def main_analysis_by_restaurant(data):
+def main_analysis_by_restaurant(data, city):
     most_commented_restaurants = data['itemId'].value_counts()
     for restaurant_id in most_commented_restaurants.head(top_n_restaurants).index:
-        logger.info(f"Doing topic clustering for restaurant id: {restaurant_id}")
-        topic_clustering_by_restaurant(data, restaurant_id)
+        logger.info(f"Doing topic clustering for city: {city} and restaurant id: {restaurant_id}")
+        topic_clustering(data, city, restaurant_id)
 
 
 def main_analysis_by_restaurant_tf_itf(data, city):
@@ -36,129 +38,98 @@ def main_analysis_by_restaurant_tf_itf(data, city):
         utils.generate_histogram(tf_negative[tf_negative['itemId'] == restaurant_id], path, 20, y_max,"negative")
 
 
-def get_corpus(data, threshold):
+def get_corpus(data, threshold, restaurant_id=None):
+
+    if restaurant_id is not None:
+        logger.info(f"Filtering data for restaurant_id: {restaurant_id}")
+        data = data[data['itemId'] == restaurant_id]
+
     positive_reviews_data = data[data['rating'] >= threshold]
     negative_reviews_data = data[data['rating'] < threshold]
     logger.info(f"Total reviews {len(data.index)}, positive: {len(positive_reviews_data.index)}, negative: {len(negative_reviews_data.index)}")
 
-    corpus_positive = [ast.literal_eval(str_words) for str_words in positive_reviews_data['text'].values]
-    corpus_positive = [list(set(review_positive)) for review_positive in corpus_positive]
-    corpus_nouns_positive = [ast.literal_eval(str_words) for str_words in positive_reviews_data['nouns'].values]
-    corpus_nouns_positive = [list(set(nouns_review_positive)) for nouns_review_positive in corpus_nouns_positive]
+    load_nltk()
+    english_words = set(words.words())
 
-    corpus_negative = [ast.literal_eval(str_words) for str_words in negative_reviews_data['text'].values]
-    corpus_negative = [list(set(review_negative)) for review_negative in corpus_negative]
-    corpus_nouns_negative = [ast.literal_eval(str_words) for str_words in negative_reviews_data['nouns'].values]
-    corpus_nouns_negative = [list(set(nouns_review_negative)) for nouns_review_negative in corpus_nouns_negative]
+    corpus_positive = [
+        str_words if isinstance(str_words, list) else ast.literal_eval(str_words)
+        for str_words in positive_reviews_data['text'].values
+    ]
+    corpus_positive = list(set(chain.from_iterable(corpus_positive)))
+
+    corpus_nouns_positive = [
+        str_words if isinstance(str_words, list) else ast.literal_eval(str_words)
+        for str_words in positive_reviews_data['nouns'].values
+    ]
+    corpus_nouns_positive = [[word.strip() for word in set(nouns) if word.lower() in english_words] for nouns in corpus_nouns_positive]
+    corpus_nouns_positive = list(set(chain.from_iterable(corpus_nouns_positive)))
+
+    corpus_negative = [
+        str_words if isinstance(str_words, list) else ast.literal_eval(str_words)
+        for str_words in negative_reviews_data['text'].values
+    ]
+    corpus_negative = list(set(chain.from_iterable(corpus_negative)))
+
+    corpus_nouns_negative = [
+        str_words if isinstance(str_words, list) else ast.literal_eval(str_words)
+        for str_words in negative_reviews_data['nouns'].values
+    ]
+    corpus_nouns_negative = [[word.strip() for word in set(nouns) if word.lower() in english_words] for nouns in corpus_nouns_negative]
+    corpus_nouns_negative = list(set(chain.from_iterable(corpus_nouns_negative)))
 
     return corpus_positive, corpus_nouns_positive, corpus_negative, corpus_nouns_negative
 
 
-def topic_clustering_by_city(data, city):
-    corpus_positive, corpus_nouns_positive, corpus_negative, corpus_nouns_negative = get_corpus(data, rating_threshold)
-    # Entrenar tanto el modelo para comentario positivos como negativos
+def topic_clustering(data, city, restaurant_id=None):
+    corpus_positive, corpus_nouns_positive, corpus_negative, corpus_nouns_negative = get_corpus(data, rating_threshold, restaurant_id)
+
     for class_review in ['positive', 'negative']:
+        if restaurant_id is not None:
+            embedding_model_path = os.path.join("results_by_restaurant", str(city), str(restaurant_id), w2v_models_path_by_city, embedding_model_name)
+            gmm_path = os.path.join("results_by_restaurant", str(city), str(restaurant_id), gmm_models_path_by_city, class_review)
+            topics_path_images = os.path.join("results_by_restaurant", str(city), str(restaurant_id), figures_path_by_city)
+            topics_path_nouns = os.path.join("results_by_restaurant", str(city), str(restaurant_id), topics_clusters_path_by_city)
+            cluster_metrics_path = os.path.join("results_by_restaurant", str(city), str(restaurant_id), "metrics", class_review)
+        else:
+            embedding_model_path = os.path.join("results_by_city", city, w2v_models_path_by_city, embedding_model_name)
+            gmm_path = os.path.join("results_by_city", city, gmm_models_path_by_city, class_review)
+            topics_path_images = os.path.join("results_by_city", city, figures_path_by_city)
+            topics_path_nouns = os.path.join("results_by_city", str(city), topics_clusters_path_by_city)
+            cluster_metrics_path = os.path.join("results_by_city", str(city), "metrics", class_review)
 
-        w2v_path = os.path.join("results_by_city", city, w2v_models_path_by_city)
-        gmm_path = os.path.join("results_by_city", city, gmm_models_path_by_city, class_review)
-        topics_path_images = os.path.join("results_by_city", city, figures_path_by_city)
-        topics_path_nouns = os.path.join("results_by_city", str(city), topics_clusters_path_by_city, class_review)
-        cluster_metrics_path = os.path.join("results_by_city", str(city), "metrics", class_review)
-
-        logger.info(f"Training w2v {class_review} for city: {city}")
-        corpus = corpus_positive if class_review == 'positive' else corpus_negative
-        w2v_model = utils.train_w2v_model(w2v_path, class_review, corpus)
+        logger.info(f"Calculating {class_review} with model: {embedding_model_name} for city: {city}")
+        # corpus = corpus_positive if class_review == 'positive' else corpus_negative
+        embedding_model = utils.train_or_load_embedding_model(model_name=embedding_model_name)
         nouns = set(corpus_nouns_positive) if class_review == "positive" else set(corpus_nouns_negative)
-        trained_models, cluster_metrics, closest_words = utils.train_gmm_model(w2v_model, nouns, gmm_path, n_clusters_range=range(2, 15))
+        trained_models, cluster_metrics, closest_words = utils.train_gmm_model(embedding_model, nouns, gmm_path, n_clusters_range=n_clusters_range, top_n_points=top_n_nearest_points)
         utils.save_cluster_metrics(cluster_metrics, file_path=os.path.join(cluster_metrics_path, "all"))
-        # best_clusters = utils.select_best_clusters(cluster_metrics)
-        utils.save_cluster_metrics(cluster_metrics, file_path=os.path.join(cluster_metrics_path, "best"))
-        weights = {"semantic_coherence": 2, "silhouette_score": 1}  # Prioritize semantic quality
-        thresholds = {"semantic_coherence": 0.1, "silhouette_score": 0.1}
-        # filtered_clusters = utils.filter_clusters(cluster_metrics, thresholds)
-        best_gmm_model = utils.select_overall_best_cluster(cluster_metrics, weights)
-        # probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, closest_words[best_gmm_model])
+        best_clusters = utils.select_best_clusters(cluster_metrics)
+        utils.save_cluster_metrics(best_clusters, file_path=os.path.join(cluster_metrics_path, "best"))
 
-        metric = f'semantic_coherence-{weights["semantic_coherence"]}_silhouette_score-{weights["silhouette_score"]}'
+        for metric, best_gmm_model in best_clusters.items():
+            if best_gmm_model is not None:
+                logger.info(f"Best cluster for {metric}: {best_gmm_model} with score {cluster_metrics[best_gmm_model][metric]}")
+                probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, embedding_model, closest_words[best_gmm_model])
 
-        # for metric, best_gmm_model in best_clusters.items():
-        # logger.info(f"Best cluster for {metric}: {best_gmm_model} with score {cluster_metrics[best_gmm_model][metric]}")
+                logger.info(f"Performing TSNE")
+                utils.perform_tsne(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
 
-        probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, closest_words[best_gmm_model])
+                logger.info(f"Saving topic clusters results")
+                utils.save_topic_clusters_results(cluster_words, topics_path_nouns, class_review, metric)
 
-        logger.info(f"Performing TSNE")
-        utils.perform_tsne(w2v_model, labels, closest_words[best_gmm_model], os.path.join(topics_path_images, metric), class_review)
-
-        logger.info(f"Saving topic clusters results")
-        utils.save_topic_clusters_results(cluster_words, os.path.join(topics_path_nouns, metric))
-
-        logger.info(f"Closest words {closest_words[best_gmm_model]}")
-        logger.info(f"Cluster words: {cluster_words}")
-
-
-def topic_clustering_by_restaurant(data, restaurat_id):
-    # Retrieve positive and negative reviews for each restaurantId
-    restaurant_reviews = data[data['itemId'] == restaurat_id]
-    logger.info(f"Analysing restaurant: {restaurat_id}")
-    corpus_positive, corpus_nouns_positive, corpus_negative, corpus_nouns_negative = get_corpus(restaurant_reviews, rating_threshold)
-
-    # Entrenar tanto el modelo para comentario positivos como negativos (por ahora solo los positivos)
-    for review_type in ['positive', 'negative']:
-        w2v_path = os.path.join("results_by_restaurant", city, w2v_models_path_by_restaurant)
-        gmm_path = os.path.join("results_by_restaurant", city, gmm_models_path_by_restaurant, review_type)
-        topics_path_images = os.path.join("results_by_restaurant", city, figures_path_by_restaurant)
-        topics_path_nouns = os.path.join("results_by_restaurant", city, topics_clusters_path_by_restaurant, review_type)
-        cluster_metrics_path = os.path.join("results_by_restaurant", str(city), "metrics", review_type)
-
-        logger.info(f"Training w2v {review_type} for restaurant: {restaurat_id}")
-
-        corpus = corpus_positive if review_type == 'positive' else corpus_negative
-        w2v_model = utils.train_w2v_model(os.path.join(w2v_path, review_type, str(restaurat_id)), review_type, corpus)
-        nouns = set(corpus_nouns_positive) if review_type == "positive" else set(corpus_nouns_negative)
-        # trained_models, aic_bic_results, closest_words, best_gmm_model = utils.train_gmm_model(w2v_model, nouns, os.path.join(gmm_path, str(restaurat_id)), n_clusters_range=range(2, 15))
-        # # best_gmm_model = utils_analisys_by_restaurant.retrieve_best_gmm_model(aic_bic_results)
-        # probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, closest_words[best_gmm_model])
-
-        trained_models, cluster_metrics, closest_words = utils.train_gmm_model(w2v_model, nouns, os.path.join(gmm_path, str(restaurat_id)), n_clusters_range=range(2, 15))
-        utils.save_cluster_metrics(cluster_metrics, file_path=os.path.join(cluster_metrics_path, str(restaurat_id)))
-        # best_gmm_model = utils_analisys_by_city.retrieve_best_gmm_model(aic_bic_results)
-        # best_clusters = utils.select_best_clusters(cluster_metrics)
-        weights = {"semantic_coherence": 2, "silhouette_score": 1}  # Prioritize semantic quality
-        thresholds = {"semantic_coherence": 0.1, "silhouette_score": 0.1}
-        # filtered_clusters = utils.filter_clusters(cluster_metrics, thresholds)
-        best_gmm_model = utils.select_overall_best_cluster(cluster_metrics, weights)
-
-        probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, closest_words[best_gmm_model])
-        metric = f'semantic_coherence-{weights["semantic_coherence"]}_silhouette_score-{weights["silhouette_score"]}'
-        logger.info("Performing TSNE")
-        utils.perform_tsne(w2v_model, labels, closest_words[best_gmm_model], os.path.join(topics_path_images, str(restaurat_id), metric), review_type)
-        logger.info("Saving topic clusters results")
-        utils.save_topic_clusters_results(cluster_words, os.path.join(topics_path_nouns, str(restaurat_id), metric))
-        logger.info(f"Closest words {closest_words[best_gmm_model]}")
-        logger.info(f"Cluster words: {cluster_words}")
-
-        # for metric, best_gmm_model in best_cluster.items():
-        #     logger.info(f"Best cluster for {metric}: {best_gmm_model} with score {cluster_metrics[best_gmm_model][metric]}")
-        #
-        #     probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, w2v_model, closest_words[best_gmm_model])
-        #
-        #     logger.info("Performing TSNE")
-        #     utils.perform_tsne(w2v_model, labels, closest_words[best_gmm_model], os.path.join(topics_path_images, str(restaurat_id), metric), review_type)
-        #     logger.info("Saving topic clusters results")
-        #     utils.save_topic_clusters_results(cluster_words, os.path.join(topics_path_nouns, str(restaurat_id), metric))
-        #     logger.info(f"Closest words {closest_words[best_gmm_model]}")
-        #     logger.info(f"Cluster words: {cluster_words}")
-
+                logger.info(f"Closest words {closest_words[best_gmm_model]}")
+                logger.info(f"Cluster words: {cluster_words}")
 
 if __name__ == "__main__":
-    # ["gijon", "moscow", "madrid", "Istanbul", "barcelona"]
-    for city in ["moscow"]:
+    # ["gijon", "moscow", "madrid", "istanbul", "barcelona"]
+    for city in ["barcelona"]:
         logger.info(f"Checking city: {city.title()}")
 
         logger.info(f"Creating reviews data")
         _ = load_items_df(city, "items")
         _ = load_users_df(city, "users")
         data = load_reviews_df(city, "reviews", lang="en", from_date="2018-01-01", to_date="2023-01-01")
+
         logger.info(f"Data of {city} loaded, in total there are {len(data.index)} reviews")
         logger.info(f"N. of users: {data['userId'].nunique()}")
         logger.info(f"N. of restaurants: {data['itemId'].nunique()}")
@@ -167,7 +138,7 @@ if __name__ == "__main__":
         logger.info(f"Review dates between: {data['date'].min()} and {data['date'].max()}")
 
         # main_analysis_by_city(data, city)
-        main_analysis_by_restaurant(data)
+        main_analysis_by_restaurant(data, city)
         # main_analysis_by_restaurant_tf_itf(data, city)
 
 
