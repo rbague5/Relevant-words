@@ -11,15 +11,15 @@ from preprocessing import load_reviews_df, load_items_df, load_users_df
 
 
 def main_analysis_by_city(data, city):
-    logger.info(f"Doing topic clustering")
-    topic_clustering_by_city(data, city)
+    logger.info(f"Doing topic clustering for city: {city}")
+    topic_clustering(data, city)
 
 
-def main_analysis_by_restaurant(data):
+def main_analysis_by_restaurant(data, city):
     most_commented_restaurants = data['itemId'].value_counts()
     for restaurant_id in most_commented_restaurants.head(top_n_restaurants).index:
-        logger.info(f"Doing topic clustering for restaurant id: {restaurant_id}")
-        topic_clustering_by_restaurant(data, restaurant_id)
+        logger.info(f"Doing topic clustering for city: {city} and restaurant id: {restaurant_id}")
+        topic_clustering(data, city, restaurant_id)
 
 
 def main_analysis_by_restaurant_tf_itf(data, city):
@@ -139,7 +139,6 @@ if __name__ == "__main__":
 
         # main_analysis_by_city(data, city)
         # main_analysis_by_restaurant(data, city)
-        main_analysis_by_restaurant(data, city)
         # main_analysis_by_restaurant_tf_itf(data, city)
 
 
