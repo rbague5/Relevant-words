@@ -1,0 +1,65 @@
+{
+    "inter_distance_negative": {
+        "mean_confidence": 0.7124876635415214,
+        "mean_cohesion": 0.6195928794997079
+    },
+    "inter_distance_positive": {
+        "mean_confidence": 0.7015723926680428,
+        "mean_cohesion": 0.6264600838933673
+    },
+    "intra_distance_negative": {
+        "mean_confidence": 0.7211196621259054,
+        "mean_cohesion": 0.6201546390851339
+    },
+    "intra_distance_positive": {
+        "mean_confidence": 0.6752849370241165,
+        "mean_cohesion": 0.6038114875555038
+    },
+    "npmi_negative": {
+        "mean_confidence": 0.7064192046721777,
+        "mean_cohesion": 0.6226723194122314
+    },
+    "npmi_positive": {
+        "mean_confidence": 0.7138643806630914,
+        "mean_cohesion": 0.6243649829517711
+    },
+    "scci_negative": {
+        "mean_confidence": 0.7106221868441656,
+        "mean_cohesion": 0.6197224809573247
+    },
+    "scci_positive": {
+        "mean_confidence": 0.7122528690558213,
+        "mean_cohesion": 0.624203608586238
+    },
+    "semantic_coherence_negative": {
+        "mean_confidence": 0.7211196621259054,
+        "mean_cohesion": 0.6201546390851339
+    },
+    "semantic_coherence_positive": {
+        "mean_confidence": 0.718195698090962,
+        "mean_cohesion": 0.6260949288095746
+    },
+    "silhouette_score_negative": {
+        "mean_confidence": 0.7211196621259054,
+        "mean_cohesion": 0.6201546390851339
+    },
+    "silhouette_score_positive": {
+        "mean_confidence": 0.6752849370241165,
+        "mean_cohesion": 0.6038114875555038
+    },
+    "best_mean_confidence": [
+        [
+            "intra_distance_negative",
+            "semantic_coherence_negative",
+            "silhouette_score_negative"
+        ],
+        0.7211196621259054
+    ],
+    "best_mean_cohesion": [
+        [
+            "inter_distance_positive"
+        ],
+        0.6264600838933673
+    ],
+    "best_mean_metrics": 0.6737898730096363
+}

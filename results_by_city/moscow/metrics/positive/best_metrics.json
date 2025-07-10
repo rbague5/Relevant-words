@@ -1,0 +1,14 @@
+{
+    "aic": null,
+    "bic": null,
+    "davies_bouldin_score": null,
+    "perplexity": null,
+    "intra_distance": "4",
+    "silhouette_score": "6",
+    "calinski_harabasz_score": null,
+    "semantic_coherence": "3",
+    "topic_diversity": null,
+    "inter_distance": "14",
+    "npmi": "3",
+    "scci": "14"
+}

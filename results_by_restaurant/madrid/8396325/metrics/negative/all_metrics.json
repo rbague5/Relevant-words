@@ -1,0 +1,98 @@
+{
+    "3": {
+        "silhouette_score": 0.1059286892414093,
+        "semantic_coherence": 0.4013097584247589,
+        "intra_distance": 1.0885084583634776,
+        "inter_distance": 0.9950331212675909,
+        "npmi": 11.118558096491599,
+        "scci": 0.7421887861034154
+    },
+    "4": {
+        "silhouette_score": 0.02088996395468712,
+        "semantic_coherence": 0.40240478515625,
+        "intra_distance": 0.982901523369229,
+        "inter_distance": 0.6806588084086637,
+        "npmi": 11.3368043406399,
+        "scci": 0.4637459381713032
+    },
+    "5": {
+        "silhouette_score": -0.11714531481266022,
+        "semantic_coherence": 0.43085289001464844,
+        "intra_distance": 1.1191874854289332,
+        "inter_distance": 0.9903726865113036,
+        "npmi": 12.537221969125905,
+        "scci": 0.6734457295196303
+    },
+    "6": {
+        "silhouette_score": -0.10414956510066986,
+        "semantic_coherence": 0.4391237199306488,
+        "intra_distance": 1.0919400241677149,
+        "inter_distance": 0.9568518172215378,
+        "npmi": 12.782278473158696,
+        "scci": 0.7218625842709833
+    },
+    "7": {
+        "silhouette_score": -0.06927026808261871,
+        "semantic_coherence": 0.42400527000427246,
+        "intra_distance": 1.0610428119168551,
+        "inter_distance": 0.8839068830625083,
+        "npmi": 12.246744157299625,
+        "scci": 0.6745139465999637
+    },
+    "8": {
+        "silhouette_score": -0.058227282017469406,
+        "semantic_coherence": 0.43216362595558167,
+        "intra_distance": 1.0379382171940115,
+        "inter_distance": 0.8232903156552537,
+        "npmi": 12.405826880347288,
+        "scci": 0.7233018374148561
+    },
+    "9": {
+        "silhouette_score": -0.0688755139708519,
+        "semantic_coherence": 0.4347080588340759,
+        "intra_distance": 1.051530111967753,
+        "inter_distance": 0.8571611157867858,
+        "npmi": 12.510493516987673,
+        "scci": 0.7022628811486324
+    },
+    "10": {
+        "silhouette_score": -0.07462979853153229,
+        "semantic_coherence": 0.42114901542663574,
+        "intra_distance": 1.0664034994459106,
+        "inter_distance": 0.8886112496706886,
+        "npmi": 12.030562929439176,
+        "scci": 0.6671871747991797
+    },
+    "11": {
+        "silhouette_score": -0.07435330748558044,
+        "semantic_coherence": 0.415647029876709,
+        "intra_distance": 1.0816323202580642,
+        "inter_distance": 0.9258174529004545,
+        "npmi": 11.822599680509365,
+        "scci": 0.6888362634968023
+    },
+    "12": {
+        "silhouette_score": -0.10219677537679672,
+        "semantic_coherence": 0.42172011733055115,
+        "intra_distance": 1.0753761042201806,
+        "inter_distance": 0.9161346997841907,
+        "npmi": 12.074042931439733,
+        "scci": 0.7025164006373168
+    },
+    "13": {
+        "silhouette_score": -0.1470353901386261,
+        "semantic_coherence": 0.4114503860473633,
+        "intra_distance": 1.0711736051135996,
+        "inter_distance": 0.9077476373959146,
+        "npmi": 11.681359156213887,
+        "scci": 0.7166995949907193
+    },
+    "14": {
+        "silhouette_score": -0.14643898606300354,
+        "semantic_coherence": 0.4081382751464844,
+        "intra_distance": 1.0837154582700317,
+        "inter_distance": 0.931105613527772,
+        "npmi": 11.567676180719506,
+        "scci": 0.852147888028492
+    }
+}

@@ -1,0 +1,63 @@
+{
+    "inter_distance_negative": {
+        "mean_confidence": 0.7115947512479929,
+        "mean_cohesion": 0.6147520817243136
+    },
+    "inter_distance_positive": {
+        "mean_confidence": 0.7117942709189194,
+        "mean_cohesion": 0.6136168241500854
+    },
+    "intra_distance_negative": {
+        "mean_confidence": 0.6763270616531372,
+        "mean_cohesion": 0.6012703061103821
+    },
+    "intra_distance_positive": {
+        "mean_confidence": 0.655279537041982,
+        "mean_cohesion": 0.582031786441803
+    },
+    "npmi_negative": {
+        "mean_confidence": 0.6703246086835861,
+        "mean_cohesion": 0.5935855209827423
+    },
+    "npmi_positive": {
+        "mean_confidence": 0.7046958009401957,
+        "mean_cohesion": 0.6096363365650177
+    },
+    "scci_negative": {
+        "mean_confidence": 0.7142260372638702,
+        "mean_cohesion": 0.6215457618236542
+    },
+    "scci_positive": {
+        "mean_confidence": 0.7117942709189194,
+        "mean_cohesion": 0.6136168241500854
+    },
+    "semantic_coherence_negative": {
+        "mean_confidence": 0.6703246086835861,
+        "mean_cohesion": 0.5935855209827423
+    },
+    "semantic_coherence_positive": {
+        "mean_confidence": 0.6990115270018578,
+        "mean_cohesion": 0.6126246154308319
+    },
+    "silhouette_score_negative": {
+        "mean_confidence": 0.6703246086835861,
+        "mean_cohesion": 0.5935855209827423
+    },
+    "silhouette_score_positive": {
+        "mean_confidence": 0.685996646230871,
+        "mean_cohesion": 0.5955760424787347
+    },
+    "best_mean_confidence": [
+        [
+            "scci_negative"
+        ],
+        0.7142260372638702
+    ],
+    "best_mean_cohesion": [
+        [
+            "scci_negative"
+        ],
+        0.6215457618236542
+    ],
+    "best_mean_metrics": 0.6678858995437622
+}

@@ -1,0 +1,69 @@
+{
+    "inter_distance_negative": {
+        "mean_confidence": 0.723309018782207,
+        "mean_cohesion": 0.6294789441994258
+    },
+    "inter_distance_positive": {
+        "mean_confidence": 0.7214026663984571,
+        "mean_cohesion": 0.6210154252392905
+    },
+    "intra_distance_negative": {
+        "mean_confidence": 0.6831545035044352,
+        "mean_cohesion": 0.5980574091275533
+    },
+    "intra_distance_positive": {
+        "mean_confidence": 0.695573627948761,
+        "mean_cohesion": 0.5899257212877274
+    },
+    "npmi_negative": {
+        "mean_confidence": 0.723309018782207,
+        "mean_cohesion": 0.6294789441994258
+    },
+    "npmi_positive": {
+        "mean_confidence": 0.6962132453918457,
+        "mean_cohesion": 0.6114734212557474
+    },
+    "scci_negative": {
+        "mean_confidence": 0.723309018782207,
+        "mean_cohesion": 0.6294789441994258
+    },
+    "scci_positive": {
+        "mean_confidence": 0.7214026663984571,
+        "mean_cohesion": 0.6210154252392905
+    },
+    "semantic_coherence_negative": {
+        "mean_confidence": 0.723309018782207,
+        "mean_cohesion": 0.6294789441994258
+    },
+    "semantic_coherence_positive": {
+        "mean_confidence": 0.6962132453918457,
+        "mean_cohesion": 0.6114734212557474
+    },
+    "silhouette_score_negative": {
+        "mean_confidence": 0.6831545035044352,
+        "mean_cohesion": 0.5980574091275533
+    },
+    "silhouette_score_positive": {
+        "mean_confidence": 0.7159067392349243,
+        "mean_cohesion": 0.6140885055065155
+    },
+    "best_mean_confidence": [
+        [
+            "inter_distance_negative",
+            "npmi_negative",
+            "scci_negative",
+            "semantic_coherence_negative"
+        ],
+        0.723309018782207
+    ],
+    "best_mean_cohesion": [
+        [
+            "inter_distance_negative",
+            "npmi_negative",
+            "scci_negative",
+            "semantic_coherence_negative"
+        ],
+        0.6294789441994258
+    ],
+    "best_mean_metrics": 0.6763939814908164
+}
