@@ -4,6 +4,7 @@ import logging
 import math
 import os
 from collections import defaultdict, Counter
+from itertools import product
 
 import numpy as np
 import pandas as pd
@@ -267,7 +268,8 @@ def select_best_clusters(cluster_metrics):
 
         if valid_clusters:
             best_cluster = min(valid_clusters, key=lambda x: cluster_metrics[x][metric])
-            best_clusters[metric] = best_cluster
+            best_value = cluster_metrics[best_cluster][metric]
+            best_clusters[metric] = {best_cluster: best_value}
         else:
             best_clusters[metric] = None
 
@@ -280,7 +282,8 @@ def select_best_clusters(cluster_metrics):
 
         if valid_clusters:
             best_cluster = max(valid_clusters, key=lambda x: cluster_metrics[x][metric])
-            best_clusters[metric] = best_cluster
+            best_value = cluster_metrics[best_cluster][metric]
+            best_clusters[metric] = {best_cluster: best_value}
         else:
             best_clusters[metric] = None
 
@@ -324,8 +327,10 @@ def select_overall_best_cluster(cluster_metrics, weights=None):
     return max(overall_scores, key=overall_scores.get)
 
 
-def train_gmm_model(w2v_model, nouns, model_path, n_clusters_range=range(3, 10), top_n_points=10):
+def train_gmm_model(w2v_model, nouns, model_path, n_clusters_range=range(3, 10), top_n_points=10, covariance_type='diag',
+                reg_covar=1e-5, max_iter=200, n_init=3):
     from metrics import calculate_semantic_coherence, calculate_intra_distances, calculate_inter_distances, calculate_npmi, calculate_scci
+    from new_scci import calculate_scci_improved
 
     clustering_results = {}
     cluster_metrics = {}
@@ -344,7 +349,15 @@ def train_gmm_model(w2v_model, nouns, model_path, n_clusters_range=range(3, 10),
 
         if not model_saved(model_path, model_name):
             peaks = retrieve_peaks(n_clusters, keyed_vectors, corpus)
-            gmm = GaussianMixture(n_components=n_clusters, means_init=peaks, random_state=42)
+            gmm = GaussianMixture(
+                n_components=n_clusters,
+                means_init=peaks,
+                random_state=42,
+                covariance_type=covariance_type,
+                reg_covar=reg_covar,
+                max_iter=max_iter,
+                n_init=n_init,
+            )
             gmm.fit(embedding_corpus)
             save_gmm_model(model_file_path, gmm)
         else:
@@ -357,13 +370,20 @@ def train_gmm_model(w2v_model, nouns, model_path, n_clusters_range=range(3, 10),
 
         closest[model_name] = top_n_closest_words
 
+        sil_score = silhouette_score(embedding_corpus, labels) if len(set(labels)) > 1 else None
+        semantic_coherence = calculate_semantic_coherence(keyed_vectors, gmm, corpus, top_n=top_n_points)
+        intra_distance = calculate_intra_distances(gmm, embedding_corpus)
+        inter_distance = calculate_inter_distances(gmm, embedding_corpus)
+        npmi = calculate_npmi(gmm, corpus, keyed_vectors, top_n=top_n_points)
+        scci = calculate_scci_improved(embedding_corpus, labels, normalize_output=True)
+
         metrics = {
-            "silhouette_score": silhouette_score(embedding_corpus, labels) if len(set(labels)) > 1 else None,
-            "semantic_coherence": calculate_semantic_coherence(keyed_vectors, gmm, corpus, top_n_points),
-            "intra_distance": calculate_intra_distances(gmm, embedding_corpus),
-            "inter_distance": calculate_inter_distances(gmm, embedding_corpus),
-            "npmi": calculate_npmi(gmm, corpus, keyed_vectors),
-            "scci": calculate_scci(embedding_corpus, labels)
+            "silhouette_score": round(sil_score, 4),
+            "semantic_coherence": round(semantic_coherence, 4),
+            "intra_distance": round(intra_distance, 4),
+            "inter_distance": round(inter_distance, 4),
+            "npmi": round(npmi, 4),
+            "scci": scci
         }
 
         cluster_metrics[model_name] = metrics
@@ -469,7 +489,7 @@ def get_words_by_cluster(sample, labels, n_clusters):
     return clusters
 
 
-def perform_tsne(w2v_model, labels, closest_words, figure_path, review_type, metric, n_iter=3000):
+def perform_tsne(w2v_model, labels, closest_words, figure_path, review_type, metric, n_iter=3000, img_name: str = ""):
     # Soporte para modelos con o sin `.wv`
     keyed_vectors = w2v_model.wv if hasattr(w2v_model, "wv") else w2v_model
 
@@ -509,44 +529,13 @@ def perform_tsne(w2v_model, labels, closest_words, figure_path, review_type, met
 
     # Anotar cada punto
     for label, x, y in zip(words, X_embedded[:, 0], X_embedded[:, 1]):
-        plt.annotate(label, xy=(x, y), xytext=(0, 0), fontsize=9, textcoords="offset points")
+        plt.annotate(label, xy=(x, y), xytext=(0, 0), fontsize=15, textcoords="offset points")
 
     fig_path = figure_path + metric + "_" + review_type + "_" + f"{str(len(set(labels)))}.png"
     # Guardar figura
     plt.tight_layout()
     plt.savefig(fig_path)
     plt.close()
-    # Filter perplexities valid for this dataset
-    # valid_perplexities = [p for p in [5,15,30,50] if p < n_samples]
-    #
-    # if not valid_perplexities:
-    #     raise ValueError(f"No valid perplexities for n_samples={n_samples}")
-    #
-    # # Optional: generate a t-SNE plot for each perplexity
-    # for perplexity in valid_perplexities:
-    #     tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity, n_iter=n_iter)
-    #     X_embedded = tsne.fit_transform(X=embedding_corpus)
-    #
-    #     plt.figure(figsize=(15, 10))
-    #     palette = sns.color_palette("bright", max(len(set(labels)), 10))
-    #
-    #     sns.scatterplot(
-    #         x=X_embedded[:, 0],
-    #         y=X_embedded[:, 1],
-    #         hue=labels[:n_samples],
-    #         palette=palette[:len(set(labels))],
-    #         legend="full",
-    #         style=labels[:n_samples],
-    #     )
-    #
-    #     # # Annotate points
-    #     # for label, x, y in zip(words, X_embedded[:, 0], X_embedded[:, 1]):
-    #     #     plt.annotate(label, xy=(x, y), xytext=(2, 2), fontsize=9, textcoords="offset points")
-    #
-    #     os.makedirs(figure_path, exist_ok=True)
-    #     plt.title(f"t-SNE Visualization (perplexity={perplexity}, n_iter={n_iter}) - {review_type} ({metric})")
-    #     plt.savefig(os.path.join(figure_path, f"tsne_{review_type}_{metric}_perp{perplexity}.png"))
-    #     plt.close()
 
 def save_topic_clusters_results(cluster_dict, results_path, class_review, metric):
     if not os.path.exists(results_path):
@@ -603,3 +592,20 @@ def load_topic_clustes(results_path):
     for filename in os.listdir(results_path):
         topic_clusters[filename.split(".")[0]] = np.load(os.path.join(results_path, filename))
     return topic_clusters
+
+
+def generate_grid_search_params(covariance_types, reg_covars, max_iters, n_inits):
+    """
+    Generates all combinations of parameter configurations for model training.
+
+    Returns a list of dictionaries, each representing one configuration.
+    """
+    grid = []
+    for cov, reg, max_iter, n_init in product(covariance_types, reg_covars, max_iters, n_inits):
+        grid.append({
+            'covariance_type': cov,
+            'reg_covar': reg,
+            'max_iter': max_iter,
+            'n_init': n_init
+        })
+    return grid

@@ -1,9 +1,10 @@
-from itertools import combinations
-
 import numpy as np
+
+from collections import Counter, defaultdict
+from itertools import combinations
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics.pairwise import cosine_similarity
-
+from nltk.tokenize import word_tokenize
 from utils import get_top_n_nearest_points
 
 
@@ -70,52 +71,6 @@ def calculate_inter_distances(gmm, embedding_corpus):
     return np.mean(inter_distances)
 
 
-def calculate_npmi(gmm, corpus_words, w2v_model, top_n=10):
-    # Obtener modelo base
-    if hasattr(w2v_model, 'wv'):
-        keyed_vectors = w2v_model.wv
-    else:
-        keyed_vectors = w2v_model
-
-    # Total de ocurrencias (frecuencia total)
-    total_word_count = sum(
-        keyed_vectors.get_vecattr(word, "count")
-        for word in corpus_words
-        if word in keyed_vectors and keyed_vectors.has_index_for(word)
-    )
-
-    # Early exit si no hay conteo válido
-    if total_word_count == 0:
-        return 0
-
-    # Obtener palabras más cercanas por cluster
-    top_words_per_cluster = get_top_n_nearest_points(gmm, keyed_vectors, corpus_words, top_n)
-
-    npmi_scores = []
-    for cluster_words in top_words_per_cluster:
-        pair_scores = []
-        for word1, word2 in combinations(cluster_words, 2):
-            if all(word in keyed_vectors and keyed_vectors.has_index_for(word)
-                   for word in [word1, word2]):
-                try:
-                    count1 = keyed_vectors.get_vecattr(word1, "count")
-                    count2 = keyed_vectors.get_vecattr(word2, "count")
-                    p1 = count1 / total_word_count
-                    p2 = count2 / total_word_count
-
-                    # Proxy para p(word1 ∩ word2)
-                    p_joint = keyed_vectors.similarity(word1, word2)
-
-                    if p1 > 0 and p2 > 0 and p_joint > 0:
-                        npmi = np.log(p_joint / (p1 * p2)) / -np.log(p_joint)
-                        pair_scores.append(npmi)
-                except:
-                    continue
-        npmi_scores.append(np.mean(pair_scores) if pair_scores else 0)
-
-    return np.mean(npmi_scores) if npmi_scores else 0
-
-
 def calculate_scci(embedding_corpus, labels, epsilon=1e-10):
     """
     Calculates the Semantic Cohesive Clustering Index (SCCI).
@@ -128,49 +83,115 @@ def calculate_scci(embedding_corpus, labels, epsilon=1e-10):
     Returns:
         float: SCCI score.
     """
-    if len(embedding_corpus) == 0 or len(labels) == 0:
+    raise NotImplemented()
+
+def calculate_npmi(gmm, corpus, keyed_vectors, top_n=10, window_size=10):
+    """
+    Calculates Normalized Pointwise Mutual Information (NPMI) for word clusters.
+
+    Args:
+        gmm: GaussianMixture model fitted on embeddings.
+        corpus: List of documents (each as string).
+        keyed_vectors: Word2Vec KeyedVectors or model.wv.
+        top_n: Number of top words per cluster.
+        window_size: Window size for cooccurrence.
+
+    Returns:
+        float: Mean NPMI across all clusters.
+    """
+
+    def get_word_cooccurrence_counts(corpus_tokens, window_size=5):
+        cooccurrence = defaultdict(int)
+        word_counts = Counter(corpus_tokens)
+        total_windows = 0
+
+        for i in range(len(corpus_tokens)):
+            window = corpus_tokens[i + 1:i + 1 + window_size]
+            for w1 in [corpus_tokens[i]]:
+                for w2 in window:
+                    if w1 != w2:
+                        pair = tuple(sorted((w1, w2)))
+                        cooccurrence[pair] += 1
+            total_windows += 1
+
+        return cooccurrence, word_counts, total_windows
+
+    def calculate_npmi_from_counts(word_list, cooccurrence, word_counts, total_windows, total_word_count):
+        if len(word_list) < 2:
+            return 0  # Can't calculate NPMI for < 2 words
+
+        npmi_scores = []
+        for w1, w2 in combinations(word_list, 2):
+            pair = tuple(sorted((w1, w2)))
+            count_joint = cooccurrence.get(pair, 0)
+
+            # Add smoothing to avoid zero counts
+            count_joint += 1e-10
+
+            # Use different probability calculation
+            p_joint = count_joint / (total_windows + 1e-10)
+            p1 = (word_counts[w1] + 1e-10) / (total_word_count + 1e-10)
+            p2 = (word_counts[w2] + 1e-10) / (total_word_count + 1e-10)
+
+            if p_joint > 0:
+                pmi = np.log(p_joint / (p1 * p2))
+                # Use standard NPMI normalization
+                npmi = pmi / (-np.log(p_joint)) if p_joint < 1 else 0
+                npmi_scores.append(npmi)
+
+        return np.mean(npmi_scores) if npmi_scores else 0
+
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    # Step 1: Tokenize corpus
+    corpus_tokens = [token for doc in corpus for token in word_tokenize(doc.lower())]
+
+    if not corpus_tokens:
         return 0.0
 
-    unique_labels = np.unique(labels)
+    # Step 2: Cooccurrence counts
+    cooccurrence, word_counts, total_windows = get_word_cooccurrence_counts(corpus_tokens, window_size)
+    total_word_count = sum(word_counts.values())
 
-    # 1. Compute Semantic Tightness (ST)
-    tightness_scores = []
-    for label in unique_labels:
-        indices = np.where(labels == label)[0]
-        cluster_embeddings = embedding_corpus[indices]
+    # Step 3: Get top words per cluster
+    from itertools import islice
 
-        if len(cluster_embeddings) < 2:
-            # Skip clusters with less than 2 points
-            continue
+    def get_top_n_nearest_points(gmm, keyed_vectors, corpus_tokens, top_n):
+        cluster_centers = gmm.means_
+        vocab = list(set(corpus_tokens))
+        embeddings = []
+        valid_words = []
 
-        similarities = cosine_similarity(cluster_embeddings)
-        upper_triangle_indices = np.triu_indices_from(similarities, k=1)
-        cluster_similarities = similarities[upper_triangle_indices]
-        st_k = np.mean(cluster_similarities)
-        tightness_scores.append(st_k)
+        for word in vocab:
+            if word in keyed_vectors and keyed_vectors.has_index_for(word):
+                embeddings.append(keyed_vectors[word])
+                valid_words.append(word)
 
-    mean_tightness = np.mean(tightness_scores) if tightness_scores else 0.0
+        embeddings = np.array(embeddings)
+        labels = gmm.predict(embeddings)
+        top_words_per_cluster = []
 
-    # 2. Compute Semantic Overlap (SO)
-    centroids = []
-    for label in unique_labels:
-        indices = np.where(labels == label)[0]
-        cluster_embeddings = embedding_corpus[indices]
-        centroid = np.mean(cluster_embeddings, axis=0)
-        centroids.append(centroid)
+        for k in range(gmm.n_components):
+            indices = np.where(labels == k)[0]
+            cluster_words = [valid_words[i] for i in indices]
+            cluster_vectors = embeddings[indices]
+            if len(cluster_vectors) == 0:
+                top_words_per_cluster.append([])
+                continue
+            centroid = cluster_centers[k]
+            sims = cosine_similarity(cluster_vectors, centroid.reshape(1, -1)).flatten()
+            top_indices = np.argsort(sims)[-top_n:]
+            top_words = [cluster_words[i] for i in top_indices]
+            top_words_per_cluster.append(top_words)
 
-    centroids = np.stack(centroids)
-    centroid_similarities = cosine_similarity(centroids)
-    upper_triangle_indices = np.triu_indices_from(centroid_similarities, k=1)
-    centroid_overlap = centroid_similarities[upper_triangle_indices]
+        return top_words_per_cluster
 
-    # Only positive similarities count as overlap
-    positive_overlap = centroid_overlap[centroid_overlap > 0]
-    mean_overlap = np.mean(positive_overlap) if positive_overlap.size > 0 else 0.0
+    top_words_per_cluster = get_top_n_nearest_points(gmm, keyed_vectors, corpus_tokens, top_n)
 
-    # 3. Calculate SCCI
-    scci_score = mean_tightness / (mean_overlap + epsilon)
+    # Step 4: Compute NPMI per cluster
+    npmi_scores = []
+    for word_list in top_words_per_cluster:
+        score = calculate_npmi_from_counts(word_list, cooccurrence, word_counts, total_windows, total_word_count)
+        npmi_scores.append(score)
 
-    return scci_score
-
-
+    return np.mean(npmi_scores) if npmi_scores else 0.0

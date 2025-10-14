@@ -48,8 +48,8 @@ def label_clusters(clusters, candidate_phrases, model):
         print(f"\nCluster {i}:")
         print(f"  Words: {clusters[i]}")
         print(f"  → Best Label: '{candidate_phrases[best_idx]}'")
-        print(f"  → Confidence Score: {sims[best_idx]:.2f}")
-        print(f"  → Cohesion Score:  {cohesion:.2f}")
+        print(f"  → Confidence Score: {sims[best_idx]:.4f}")
+        print(f"  → Cohesion Score:  {cohesion:.4f}")
 
 
 def get_cluster_words(city, path):
@@ -88,13 +88,13 @@ def calculate_label_confidence_cohesion(model, clusters_words_metrics, v=True):
     metrics_summary = {}
 
     for metric, cluster_words in clusters_words_metrics.items():
-        logger.info(f"\n=== Metric: {metric} ===") if v else None
+        logger.info(f"=== Metric: {metric} ===") if v else None
 
         confidences = []
         cohesions = []
 
         for cluster_id, words in cluster_words.items():
-            logger.info(f"\nCluster {cluster_id}: {words}") if v else None
+            logger.info(f"Cluster {cluster_id}: {words}") if v else None
 
             if len(words) == 0:
                 continue
@@ -114,8 +114,8 @@ def calculate_label_confidence_cohesion(model, clusters_words_metrics, v=True):
             cohesion = sims.mean().item()
 
             logger.info(f"  → Best Label: '{best_label}'") if v else None
-            logger.info(f"  → Confidence Score: {confidence:.2f}") if v else None
-            logger.info(f"  → Cohesion Score:  {cohesion:.2f}") if v else None
+            logger.info(f"  → Confidence Score: {confidence:.4f}") if v else None
+            logger.info(f"  → Cohesion Score:  {cohesion:.4f}") if v else None
 
             confidences.append(confidence)
             cohesions.append(cohesion)
@@ -124,12 +124,12 @@ def calculate_label_confidence_cohesion(model, clusters_words_metrics, v=True):
         mean_confidence = sum(confidences) / len(confidences) if confidences else 0
         mean_cohesion = sum(cohesions) / len(cohesions) if cohesions else 0
 
-        logger.info(f"\n>>> Mean Confidence for {metric}: {mean_confidence:.2f}") if v else None
-        logger.info(f">>> Mean Cohesion for {metric}:  {mean_cohesion:.2f}") if v else None
+        logger.info(f">>> Mean Confidence for {metric}: {mean_confidence:.4f}") if v else None
+        logger.info(f">>> Mean Cohesion for {metric}:  {mean_cohesion:.4f}") if v else None
 
         metrics_summary[metric] = {
-            "mean_confidence": mean_confidence,
-            "mean_cohesion": mean_cohesion
+            "mean_confidence": round(mean_confidence, 4),
+            "mean_cohesion": round(mean_cohesion, 4)
         }
 
     return metrics_summary
@@ -160,8 +160,8 @@ def get_best_keys_per_score(metric_summary):
             best_cohesion_keys.append(key)
 
     return {
-        'best_mean_confidence': (best_confidence_keys, best_confidence_value),
-        'best_mean_cohesion': (best_cohesion_keys, best_cohesion_value),
+        'best_mean_confidence': (best_confidence_keys, round(best_confidence_value, 4)),
+        'best_mean_cohesion': (best_cohesion_keys, round(best_cohesion_value, 4)),
     }
 
 
@@ -178,12 +178,12 @@ def main_cities_topics(data, city, restaurant_id=None, v=True):
         cluster_words_path = os.path.join("results_by_city", city, "results", "topics")
 
     clusters_words_by_metric = get_cluster_words(city, path=cluster_words_path)
-    logger.info(f"Cluster words: {clusters_words_by_metric}") if v else None
+    logger.info(f"Cluster words of {cluster_words_path}: {clusters_words_by_metric}") if v else None
 
     model = SentenceTransformer('all-MiniLM-L6-v2')
 
     metric_summary = calculate_label_confidence_cohesion(model, clusters_words_by_metric, v)
-    logger.info(metric_summary) if v else None
+    logger.info(f"Metrics summary: {metric_summary}") if v else None
 
     best_keys = get_best_keys_per_score(metric_summary)
 
@@ -223,7 +223,7 @@ def get_most_common_metrics(best_city_summary, city, v):
     logger.info(f"Most common metric(s) for {city} with count {max_count}: {most_common_metrics}") if v else None
 
     # Return a list of tied metrics (or a single metric if only one)
-    return most_common_metrics if len(most_common_metrics) > 1 else most_common_metrics[0]
+    return most_common_metrics
 
 
 def count_metrics_across_cities(most_common_metrics_per_city, ignore_suffix, v):
@@ -276,31 +276,31 @@ def main_analysis_by_city(data, city):
     best_city_summary = main_cities_topics(data, city, v=verbose)
     logger.info(f"Best metrics of {city}: {best_city_summary}")
     most_common_metric = get_most_common_metrics(best_city_summary, city, v=verbose)
-    most_common_metrics_per_city[city] = most_common_metric
 
-    return most_common_metrics_per_city
+    return most_common_metric
 
 def main_analysis_by_restaurant(data, city):
     most_commented_restaurants = data['itemId'].value_counts()
-    most_common_metrics_per_city = {}
+    most_common_metrics_per_city_by_restaurants = {}
     for restaurant_id in most_commented_restaurants.head(top_n_restaurants).index:
         logger.info(f"Doing topic clustering for city: {city} and restaurant id: {restaurant_id}")
 
         best_city_summary = main_cities_topics(data, city, str(restaurant_id), v=verbose)
         logger.info(f"Best metrics of restaurant {restaurant_id} in {city}: {best_city_summary}")
         most_common_metric = get_most_common_metrics(best_city_summary, city, v=verbose)
-        if city not in most_common_metrics_per_city:
-            most_common_metrics_per_city[city] = {}
+        if city not in most_common_metrics_per_city_by_restaurants:
+            most_common_metrics_per_city_by_restaurants[city] = {}
 
-        most_common_metrics_per_city[city][restaurant_id] = most_common_metric
+        most_common_metrics_per_city_by_restaurants[city][restaurant_id] = most_common_metric
 
-    return most_common_metrics_per_city
+    flattened_list = [item for sublist in most_common_metrics_per_city_by_restaurants[city].values() for item in sublist]
+    return flattened_list
 
 if __name__ == "__main__":
     # ["gijon", "moscow", "madrid", "istanbul", "barcelona"]
-    most_common_metrics_per_city = {}
-    most_common_metrics_per_city_all = {}
-    verbose = True
+    result_most_common_metrics_per_city = {}
+    result_most_common_metrics_per_city_all = {}
+    verbose = False
     for city in ["moscow", "madrid", "istanbul", "barcelona"]:
         logger.info(f"Checking city: {city.title()}")
 
@@ -314,10 +314,10 @@ if __name__ == "__main__":
         logger.info(f"N. of rating: {data['rating'].value_counts().sort_index(ascending=False)}") if verbose else None
         logger.info(f"Review dates between: {data['date'].min()} and {data['date'].max()}") if verbose else None
 
-        # most_common_metrics_per_city = main_analysis_by_city(data, city)
-        most_common_metrics_per_city_all = main_analysis_by_restaurant(data, city)
+        # result_most_common_metrics_per_city_all[city] = main_analysis_by_city(data, city)
+        result_most_common_metrics_per_city_all[city] = main_analysis_by_restaurant(data, city)
 
     logger.info("")
-    _, _ = count_metrics_across_cities(most_common_metrics_per_city,ignore_suffix=True, v=True)
+    _, _ = count_metrics_across_cities(result_most_common_metrics_per_city_all,ignore_suffix=True, v=True)
     logger.info("")
-    _, _ = count_metrics_across_cities(most_common_metrics_per_city, ignore_suffix=False, v=True)
+    _, _ = count_metrics_across_cities(result_most_common_metrics_per_city_all, ignore_suffix=False, v=True)

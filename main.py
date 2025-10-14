@@ -83,42 +83,104 @@ def get_corpus(data, threshold, restaurant_id=None):
 def topic_clustering(data, city, restaurant_id=None):
     corpus_positive, corpus_nouns_positive, corpus_negative, corpus_nouns_negative = get_corpus(data, rating_threshold, restaurant_id)
 
-    for class_review in ['positive', 'negative']:
-        if restaurant_id is not None:
-            embedding_model_path = os.path.join("results_by_restaurant", str(city), str(restaurant_id), w2v_models_path_by_city, embedding_model_name)
-            gmm_path = os.path.join("results_by_restaurant", str(city), str(restaurant_id), gmm_models_path_by_city, class_review)
-            topics_path_images = os.path.join("results_by_restaurant", str(city), str(restaurant_id), figures_path_by_city)
-            topics_path_nouns = os.path.join("results_by_restaurant", str(city), str(restaurant_id), topics_clusters_path_by_city)
-            cluster_metrics_path = os.path.join("results_by_restaurant", str(city), str(restaurant_id), "metrics", class_review)
-        else:
-            embedding_model_path = os.path.join("results_by_city", city, w2v_models_path_by_city, embedding_model_name)
-            gmm_path = os.path.join("results_by_city", city, gmm_models_path_by_city, class_review)
-            topics_path_images = os.path.join("results_by_city", city, figures_path_by_city)
-            topics_path_nouns = os.path.join("results_by_city", str(city), topics_clusters_path_by_city)
-            cluster_metrics_path = os.path.join("results_by_city", str(city), "metrics", class_review)
+    covariance_types = ['full', 'diag']
+    reg_covars = [1e-6, 1e-5, 1e-4]
+    max_iters = [100, 200]
+    n_inits = [1, 3]
 
+    params_list = utils.generate_grid_search_params(covariance_types, reg_covars, max_iters, n_inits)
+
+    metric_directions = {
+        'silhouette_score': 1,
+        'intra_distance': -1,
+        'inter_distance': 1,
+        'semantic_coherence': 1,
+        'npmi': 1,
+        'scci': 1,
+    }
+
+    for class_review in ['positive', 'negative']:
+        all_clusters_metrics = {}
         logger.info(f"Calculating {class_review} with model: {embedding_model_name} for city: {city}")
         # corpus = corpus_positive if class_review == 'positive' else corpus_negative
         embedding_model = utils.train_or_load_embedding_model(model_name=embedding_model_name)
         nouns = set(corpus_nouns_positive) if class_review == "positive" else set(corpus_nouns_negative)
-        trained_models, cluster_metrics, closest_words = utils.train_gmm_model(embedding_model, nouns, gmm_path, n_clusters_range=n_clusters_range, top_n_points=top_n_nearest_points)
-        utils.save_cluster_metrics(cluster_metrics, file_path=os.path.join(cluster_metrics_path, "all"))
-        best_clusters = utils.select_best_clusters(cluster_metrics)
-        utils.save_cluster_metrics(best_clusters, file_path=os.path.join(cluster_metrics_path, "best"))
 
-        for metric, best_gmm_model in best_clusters.items():
-            if best_gmm_model is not None:
-                logger.info(f"Best cluster for {metric}: {best_gmm_model} with score {cluster_metrics[best_gmm_model][metric]}")
-                probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, embedding_model, closest_words[best_gmm_model])
+        for params in params_list:
+            logger.info(f"Training GMM model with params: {params}")
+            img_name = "_".join([f"{k}-{v}" for k, v in params.items()]).replace(".", "_").replace("covariance", "cov")
 
-                logger.info(f"Performing TSNE")
-                utils.perform_tsne(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
+            if restaurant_id is not None:
+                city_path = os.path.join("results_by_restaurant", str(city), str(restaurant_id))
+                embedding_model_path = os.path.join(city_path, img_name, w2v_models_path_by_city, embedding_model_name)
+                gmm_path = os.path.join(city_path, img_name, gmm_models_path_by_city, class_review)
+                topics_path_images = os.path.join(city_path, img_name, figures_path_by_city)
+                topics_path_nouns = os.path.join(city_path, img_name, topics_clusters_path_by_city)
+                cluster_metrics_path = os.path.join(city_path, img_name, "metrics", class_review)
+            else:
+                city_path = os.path.join("results_by_restaurant", str(city))
+                embedding_model_path = os.path.join(city_path, img_name, w2v_models_path_by_city, embedding_model_name)
+                gmm_path = os.path.join(city_path, img_name, gmm_models_path_by_city, class_review)
+                topics_path_images = os.path.join(city_path, img_name, figures_path_by_city)
+                topics_path_nouns = os.path.join(city_path, img_name, topics_clusters_path_by_city)
+                cluster_metrics_path = os.path.join(city_path, img_name, "metrics", class_review)
 
-                logger.info(f"Saving topic clusters results")
-                utils.save_topic_clusters_results(cluster_words, topics_path_nouns, class_review, metric)
+            # Train or load GMM model
+            trained_models, cluster_metrics, closest_words = utils.train_gmm_model(
+                embedding_model, nouns, gmm_path, n_clusters_range=n_clusters_range, top_n_points=top_n_nearest_points,
+                covariance_type=params["covariance_type"], reg_covar=params["reg_covar"],
+                max_iter=params["max_iter"], n_init=params["n_init"]
+            )
 
-                logger.info(f"Closest words {closest_words[best_gmm_model]}")
-                logger.info(f"Cluster words: {cluster_words}")
+            utils.save_cluster_metrics(cluster_metrics, file_path=os.path.join(cluster_metrics_path, f"all_metrics"))
+            for k, v in cluster_metrics.items():
+                if "scci" in v and isinstance(v["scci"], dict):
+                    v["scci"] = v["scci"]["scci"]
+            best_clusters = utils.select_best_clusters(cluster_metrics)
+            all_clusters_metrics[img_name] = best_clusters
+            utils.save_cluster_metrics(best_clusters, file_path=os.path.join(cluster_metrics_path, f"best_metrics"))
+
+            for metric, best_gmm_model_metric in best_clusters.items():
+                if best_gmm_model_metric is not None:
+                    logger.info(f"Best cluster for {metric}: {best_gmm_model_metric}")
+                    best_gmm_model = list(best_gmm_model_metric.keys())[0]
+                    probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, embedding_model, closest_words[best_gmm_model])
+
+                    logger.info(f"Performing TSNE")
+                    utils.perform_tsne(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
+
+                    logger.info(f"Saving topic clusters results")
+                    utils.save_topic_clusters_results(cluster_words, topics_path_nouns, class_review, metric)
+
+                    logger.info(f"Closest words {closest_words[best_gmm_model]}")
+                    logger.info(f"Cluster words: {cluster_words}")
+
+        best_per_metric = {}
+        for metric in metric_directions:
+            best_config = None
+            best_value = None
+            direction = metric_directions[metric]
+
+            for config, metrics in all_clusters_metrics.items():
+                value_dict = metrics.get(metric)
+                if value_dict is None:
+                    continue
+
+                num_clusters = list(value_dict.keys())[0]
+                value = list(value_dict.values())[0]
+
+                if best_value is None:
+                    best_value = value
+                    best_config = config
+                else:
+                    if (direction == 1 and value > best_value) or (direction == -1 and value < best_value):
+                        best_value = value
+                        best_config = config
+
+            best_per_metric[metric] = str((best_config, num_clusters, best_value))
+
+        utils.save_cluster_metrics(best_per_metric, file_path=os.path.join(city_path, f"best_overall_{class_review}"))
+
 
 if __name__ == "__main__":
     # ["gijon", "moscow", "madrid", "istanbul", "barcelona"]
@@ -137,7 +199,7 @@ if __name__ == "__main__":
         logger.info(f"N. of rating: {data['rating'].value_counts().sort_index(ascending=False)}")
         logger.info(f"Review dates between: {data['date'].min()} and {data['date'].max()}")
 
-        # main_analysis_by_city(data, city)
+        main_analysis_by_city(data, city)
         # main_analysis_by_restaurant(data, city)
         # main_analysis_by_restaurant_tf_itf(data, city)
 

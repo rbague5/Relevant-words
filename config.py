@@ -27,7 +27,7 @@ target_path = os.path.join(base_path, "input")
 
 cities = ["gijon", "moscow", "madrid", "istanbul", "barcelona"]
 rating_threshold = 40
-top_n_restaurants = 5
+top_n_restaurants = 3
 top_n_nearest_points = 10
 n_clusters_range = range(3, 15)
 embedding_model_name = "fasttext" # "google", "word2vec"
