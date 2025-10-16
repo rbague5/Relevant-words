@@ -118,7 +118,7 @@ def topic_clustering(data, city, restaurant_id=None):
                 topics_path_nouns = os.path.join(city_path, img_name, topics_clusters_path_by_city)
                 cluster_metrics_path = os.path.join(city_path, img_name, "metrics", class_review)
             else:
-                city_path = os.path.join("results_by_restaurant", str(city))
+                city_path = os.path.join("results_by_city", str(city))
                 embedding_model_path = os.path.join(city_path, img_name, w2v_models_path_by_city, embedding_model_name)
                 gmm_path = os.path.join(city_path, img_name, gmm_models_path_by_city, class_review)
                 topics_path_images = os.path.join(city_path, img_name, figures_path_by_city)
