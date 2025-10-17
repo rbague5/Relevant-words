@@ -30,7 +30,7 @@ rating_threshold = 40
 top_n_restaurants = 3
 top_n_nearest_points = 10
 n_clusters_range = range(3, 15)
-embedding_model_name = "fasttext" # "google", "word2vec"
+embedding_model_name = "e5" # "fasttext", "google", "word2vec", "glove", "minilm", "sbert", "e5"
 
 w2v_models_path_by_city = f"./models/"
 gmm_models_path_by_city = f"./models/gmm/"

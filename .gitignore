@@ -8,3 +8,5 @@ venv
 /results_by_city_paper_topics/
 /results_by_city_paper/
 /results_by_city/
+/results_by_city_legacy/
+/fasttext/

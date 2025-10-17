@@ -184,7 +184,7 @@ def topic_clustering(data, city, restaurant_id=None):
 
 if __name__ == "__main__":
     # ["gijon", "moscow", "madrid", "istanbul", "barcelona"]
-    for city in ["moscow", "madrid", "istanbul", "barcelona"]:
+    for city in ["moscow"]:
         logger.info(f"Checking city: {city.title()}")
 
         logger.info(f"Creating reviews data")

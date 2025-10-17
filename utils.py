@@ -9,7 +9,9 @@ from itertools import product
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
 from matplotlib import pyplot as plt
+from sentence_transformers import SentenceTransformer
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score, pairwise_distances
 from sklearn.manifold import TSNE
@@ -40,6 +42,22 @@ def instantiate_logger():
 
 logger = instantiate_logger()
 
+class ContextualEmbeddingWrapper:
+    def __init__(self, model_name):
+        self.model = SentenceTransformer(model_name)
+        # GPU Support
+        if torch.cuda.is_available():
+            self.model = self.model.to('cuda')
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    def get_word_embedding(self, word: str):
+        # Encode the word as a "sentence"
+        with torch.no_grad():
+            emb = self.model.encode([word], convert_to_numpy=True)[0]
+        return emb
+
+    def __repr__(self):
+        return f"ContextualEmbeddingWrapper({self.model})"
 
 def retrieve_word_frequencies(data):
     cv = CountVectorizer(min_df=0.10)
@@ -125,7 +143,6 @@ def train_or_load_embedding_model(model_name, model_path=None, corpus=None):
             model.save(path)
         else:
             model = Word2Vec.load(path)
-
     elif model_name.lower() == "fasttext":
         path = os.path.join(downloaded_models_path, "fasttext-wiki-news-subwords-300")
 
@@ -136,7 +153,6 @@ def train_or_load_embedding_model(model_name, model_path=None, corpus=None):
             model.save(path)
         else:
             model = KeyedVectors.load(path)
-
     elif model_name.lower() == "google":
         path = os.path.join(downloaded_models_path, "word2vec-google-news-300")
 
@@ -147,7 +163,14 @@ def train_or_load_embedding_model(model_name, model_path=None, corpus=None):
             model.save(path)
         else:
             model = KeyedVectors.load(path)
-
+    elif model_name.lower() == "glove":
+        model = api.load("glove-wiki-gigaword-300")
+    elif model_name.lower() == "minilm":
+        model = ContextualEmbeddingWrapper("sentence-transformers/all-MiniLM-L6-v2")
+    elif model_name.lower() == "sbert":
+        model = ContextualEmbeddingWrapper("sentence-transformers/all-roberta-large-v1")
+    elif model_name.lower() == "e5":
+        model = ContextualEmbeddingWrapper("intfloat/e5-small-v2")
     else:
         raise ValueError(f"Unsupported model name: {model_name}")
 
@@ -208,33 +231,50 @@ def find_elbow_point(scores):
     return elbow_index + 1  # Adjust for index offset
 
 
-def get_top_n_nearest_points(gmm_model, w2v_model, corpus, n_points):
-    # Usar la interfaz correcta
-    keyed_vectors = w2v_model.wv if hasattr(w2v_model, 'wv') else w2v_model
+def get_top_n_nearest_points(gmm_model, embedding_model, corpus, n_points=10):
+    """
+    Retrieve the top N closest words per cluster.
+    Works for Word2Vec, FastText, GloVe, SBERT, MiniLM, E5.
+    """
+    # STATIC embeddings
+    if hasattr(embedding_model, 'wv'):
+        keyed_vectors = embedding_model.wv
+        valid_corpus = [word for word in corpus if word in keyed_vectors.key_to_index]
 
-    # Filtrar palabras fuera del vocabulario
-    valid_corpus = [word for word in corpus if word in keyed_vectors]
+    # CONTEXTUAL embeddings (SBERT, MiniLM, E5)
+    elif hasattr(embedding_model, 'get_word_embedding'):
+        class ContextualWrapper:
+            def __init__(self, model):
+                self.model = model
+
+            def __getitem__(self, word):
+                return self.model.get_word_embedding(str(word))
+
+        keyed_vectors = ContextualWrapper(embedding_model)
+        valid_corpus = [str(word) for word in corpus]  # use all words
+
+    # FALLBACK (assume keyed vectors)
+    else:
+        keyed_vectors = embedding_model
+        valid_corpus = [word for word in corpus if word in getattr(keyed_vectors, 'key_to_index', set())]
+
     if not valid_corpus:
         return []
 
+    # Build embeddings
     word_vectors = np.array([keyed_vectors[word] for word in valid_corpus])
-    distances = pairwise_distances(gmm_model.means_, word_vectors)  # shape: (n_clusters, n_words)
 
-    used_words = set()
+    # Compute distances between cluster centers and words
+    distances = pairwise_distances(gmm_model.means_, word_vectors)
+
+    # Select top N closest words per cluster
     top_n_list = []
-
     for cluster_distances in distances:
-        cluster_words = []
-        for idx in np.argsort(cluster_distances):
-            if valid_corpus[idx] not in used_words:
-                cluster_words.append(valid_corpus[idx])
-                used_words.add(valid_corpus[idx])
-            if len(cluster_words) >= n_points:
-                break
+        closest_idxs = np.argsort(cluster_distances)[:n_points]
+        cluster_words = [valid_corpus[idx] for idx in closest_idxs]
         top_n_list.append(cluster_words)
 
     return top_n_list
-
 
 
 def select_best_clusters(cluster_metrics):
@@ -327,7 +367,7 @@ def select_overall_best_cluster(cluster_metrics, weights=None):
     return max(overall_scores, key=overall_scores.get)
 
 
-def train_gmm_model(w2v_model, nouns, model_path, n_clusters_range=range(3, 10), top_n_points=10, covariance_type='diag',
+def train_gmm_model(embedding_model, nouns, model_path, n_clusters_range=range(3, 10), top_n_points=10, covariance_type='diag',
                 reg_covar=1e-5, max_iter=200, n_init=3):
     from metrics import calculate_semantic_coherence, calculate_intra_distances, calculate_inter_distances, calculate_npmi, calculate_scci
     from new_scci import calculate_scci_improved
@@ -336,12 +376,30 @@ def train_gmm_model(w2v_model, nouns, model_path, n_clusters_range=range(3, 10),
     cluster_metrics = {}
     closest = {}
 
-    # Obtener KeyedVectors independientemente del tipo de modelo
-    keyed_vectors = w2v_model.wv if hasattr(w2v_model, 'wv') else w2v_model
+    if hasattr(embedding_model, 'wv'):  # Word2Vec / FastText / Google / GloVe
+        keyed_vectors = embedding_model.wv
+        vocab = set(keyed_vectors.index_to_key)
+        corpus = sorted(vocab.intersection(nouns))
+        embedding_corpus = np.array([keyed_vectors[word] for word in corpus])
+    elif hasattr(embedding_model, 'get_word_embedding'):  # MiniLM / SBERT / E5
+        class ContextualKeyedWrapper:
+            def __init__(self, model):
+                self.model = model
 
-    # Filtrar sustantivos presentes en el vocabulario
-    corpus = sorted(set(keyed_vectors.index_to_key).intersection(nouns))
-    embedding_corpus = np.array([keyed_vectors[word] for word in corpus])
+            def __getitem__(self, word):
+                return self.model.get_word_embedding(str(word))
+
+            def index_to_key(self):
+                # Contextual models don't have vocab, but corpus acts as vocab
+                return corpus
+        keyed_vectors = ContextualKeyedWrapper(embedding_model)
+        corpus = sorted(set(nouns))  # contextual models embed any word
+        embedding_corpus = np.array([embedding_model.get_word_embedding(word) for word in corpus])
+
+    else:
+        keyed_vectors = embedding_model
+        corpus = sorted(set(keyed_vectors.index_to_key).intersection(nouns))
+        embedding_corpus = np.array([keyed_vectors[word] for word in corpus])
 
     for n_clusters in n_clusters_range:
         model_name = str(n_clusters)
@@ -395,19 +453,24 @@ def train_gmm_model(w2v_model, nouns, model_path, n_clusters_range=range(3, 10),
 def retrieve_peaks(n_peaks, embedding_model, corpus):
     peaks = []
 
-    # Usar el acceso correcto dependiendo del tipo de modelo
+    # Detect if embedding_model is a keyed model or wrapper
     if hasattr(embedding_model, 'wv'):
         keyed_vectors = embedding_model.wv
     else:
         keyed_vectors = embedding_model
 
+    # Ensure index_keys is always a LIST of words
+    if callable(getattr(keyed_vectors, 'index_to_key', None)):
+        index_keys = list(keyed_vectors.index_to_key())
+    else:
+        index_keys = list(keyed_vectors.index_to_key)
+
     last_index_found = 0
-    index_keys = keyed_vectors.index_to_key
 
     for i in range(n_peaks):
         while last_index_found < len(index_keys):
             candidate_peak = index_keys[last_index_found]
-            last_index_found += 1  # Mover fuera del if para evitar repetir
+            last_index_found += 1
             if candidate_peak in corpus:
                 peaks.append(keyed_vectors[candidate_peak])
                 break
