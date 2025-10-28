@@ -4,6 +4,7 @@ import logging
 import math
 import os
 from collections import defaultdict, Counter
+from heapq import heappush, heappushpop
 from itertools import product
 
 import numpy as np
@@ -12,6 +13,7 @@ import seaborn as sns
 import torch
 from matplotlib import pyplot as plt
 from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score, pairwise_distances
 from sklearn.manifold import TSNE
@@ -233,48 +235,59 @@ def find_elbow_point(scores):
 
 def get_top_n_nearest_points(gmm_model, embedding_model, corpus, n_points=10):
     """
-    Retrieve the top N closest words per cluster.
+    Retrieve top N words closest to each cluster centroid.
     Works for Word2Vec, FastText, GloVe, SBERT, MiniLM, E5.
+    Optimized for large corpora: no full embedding matrix is created.
     """
-    # STATIC embeddings
+    # --- Prepare access to embeddings ---
     if hasattr(embedding_model, 'wv'):
+        # Word2Vec / FastText / GloVe
         keyed_vectors = embedding_model.wv
-        valid_corpus = [word for word in corpus if word in keyed_vectors.key_to_index]
+        vocab = [word for word in corpus if word in keyed_vectors.key_to_index]
 
-    # CONTEXTUAL embeddings (SBERT, MiniLM, E5)
+        def get_vec(word):
+            return keyed_vectors[word]
     elif hasattr(embedding_model, 'get_word_embedding'):
-        class ContextualWrapper:
-            def __init__(self, model):
-                self.model = model
+        # SBERT / E5 / MiniLM / transformer
+        vocab = corpus  # keep all words, filter lazily during embedding
 
-            def __getitem__(self, word):
-                return self.model.get_word_embedding(str(word))
-
-        keyed_vectors = ContextualWrapper(embedding_model)
-        valid_corpus = [str(word) for word in corpus]  # use all words
-
-    # FALLBACK (assume keyed vectors)
+        def get_vec(word):
+            return embedding_model.get_word_embedding(str(word))
     else:
         keyed_vectors = embedding_model
-        valid_corpus = [word for word in corpus if word in getattr(keyed_vectors, 'key_to_index', set())]
+        vocab = sorted(set(keyed_vectors.index_to_key).intersection(corpus))
 
-    if not valid_corpus:
+    if not vocab:
         return []
 
-    # Build embeddings
-    word_vectors = np.array([keyed_vectors[word] for word in valid_corpus])
+    # --- Initialize TOP-N heaps per cluster ---
+    n_clusters = len(gmm_model.means_)
+    top_heaps = [[] for _ in range(n_clusters)]  # Each heap stores (-similarity, word)
 
-    # Compute distances between cluster centers and words
-    distances = pairwise_distances(gmm_model.means_, word_vectors)
+    # --- Stream over corpus ---
+    for word in vocab:
+        try:
+            vec = get_vec(word).reshape(1, -1)
+        except Exception:
+            continue  # skip words that cannot be embedded
 
-    # Select top N closest words per cluster
-    top_n_list = []
-    for cluster_distances in distances:
-        closest_idxs = np.argsort(cluster_distances)[:n_points]
-        cluster_words = [valid_corpus[idx] for idx in closest_idxs]
-        top_n_list.append(cluster_words)
+        # Compare to each cluster centroid
+        for i, centroid in enumerate(gmm_model.means_):
+            sim = cosine_similarity(vec, centroid.reshape(1, -1))[0, 0]
 
-    return top_n_list
+            # Maintain top-N heap per cluster
+            if len(top_heaps[i]) < n_points:
+                heappush(top_heaps[i], (sim, word))
+            else:
+                heappushpop(top_heaps[i], (sim, word))
+
+    # --- Extract sorted results ---
+    final_top_words = []
+    for heap in top_heaps:
+        sorted_words = [word for sim, word in sorted(heap, key=lambda x: -x[0])]
+        final_top_words.append(sorted_words)
+
+    return final_top_words
 
 
 def select_best_clusters(cluster_metrics):
@@ -395,7 +408,6 @@ def train_gmm_model(embedding_model, nouns, model_path, n_clusters_range=range(3
         keyed_vectors = ContextualKeyedWrapper(embedding_model)
         corpus = sorted(set(nouns))  # contextual models embed any word
         embedding_corpus = np.array([embedding_model.get_word_embedding(word) for word in corpus])
-
     else:
         keyed_vectors = embedding_model
         corpus = sorted(set(keyed_vectors.index_to_key).intersection(nouns))
@@ -424,15 +436,15 @@ def train_gmm_model(embedding_model, nouns, model_path, n_clusters_range=range(3
         clustering_results[model_name] = gmm
 
         labels = gmm.predict(embedding_corpus)
-        top_n_closest_words = get_top_n_nearest_points(gmm, keyed_vectors, corpus, top_n_points)
+        top_n_closest_words = get_top_n_nearest_points(gmm, embedding_model, corpus, top_n_points)
 
         closest[model_name] = top_n_closest_words
 
         sil_score = silhouette_score(embedding_corpus, labels) if len(set(labels)) > 1 else None
-        semantic_coherence = calculate_semantic_coherence(keyed_vectors, gmm, corpus, top_n=top_n_points)
+        semantic_coherence = calculate_semantic_coherence(embedding_model, top_words_per_cluster=top_n_closest_words)
         intra_distance = calculate_intra_distances(gmm, embedding_corpus)
         inter_distance = calculate_inter_distances(gmm, embedding_corpus)
-        npmi = calculate_npmi(gmm, corpus, keyed_vectors, top_n=top_n_points)
+        # npmi = calculate_npmi(gmm, corpus, keyed_vectors, top_n=top_n_points)
         scci = calculate_scci_improved(embedding_corpus, labels, normalize_output=True)
 
         metrics = {
@@ -440,7 +452,7 @@ def train_gmm_model(embedding_model, nouns, model_path, n_clusters_range=range(3
             "semantic_coherence": round(semantic_coherence, 4),
             "intra_distance": round(intra_distance, 4),
             "inter_distance": round(inter_distance, 4),
-            "npmi": round(npmi, 4),
+            # "npmi": round(npmi, 4),
             "scci": scci
         }
 
@@ -484,15 +496,31 @@ def retrieve_best_gmm_model(aic_bic_results):
     return results_df[results_df["aic"] == results_df["aic"].min()].index[0]
 
 
-def retrieve_best_model_results(best_gmm_model_name, trained_models, w2v_model, closest_words):
+def retrieve_best_model_results(best_gmm_model_name, trained_models, embedding_model, closest_words):
     model = trained_models[best_gmm_model_name]
     n_clusters = len(model.means_)
 
     # Obtener vectorizador adecuado
-    if hasattr(w2v_model, 'wv'):
-        keyed_vectors = w2v_model.wv
+    if hasattr(embedding_model, 'wv'):
+        keyed_vectors = embedding_model.wv
+    elif hasattr(embedding_model, 'get_word_embedding'):
+        class ContextualWrapper:
+            def __init__(self, model):
+                self.model = model
+
+            def __getitem__(self, word):
+                return self.model.get_word_embedding(str(word))
+
+            def __contains__(self, word):
+                try:
+                    _ = self.model.get_word_embedding(str(word))
+                    return True
+                except:
+                    return False
+
+        keyed_vectors = ContextualWrapper(embedding_model)
     else:
-        keyed_vectors = w2v_model
+        keyed_vectors = embedding_model
 
     # Flatten + filtrar palabras fuera del vocabulario
     flat_words = [word for word in np.array(closest_words).flatten().tolist() if word in keyed_vectors]
@@ -552,9 +580,27 @@ def get_words_by_cluster(sample, labels, n_clusters):
     return clusters
 
 
-def perform_tsne(w2v_model, labels, closest_words, figure_path, review_type, metric, n_iter=3000, img_name: str = ""):
+def perform_tsne(embedding_model, labels, closest_words, figure_path, review_type, metric, n_iter=3000, img_name: str = ""):
     # Soporte para modelos con o sin `.wv`
-    keyed_vectors = w2v_model.wv if hasattr(w2v_model, "wv") else w2v_model
+    if hasattr(embedding_model, 'wv'):
+        keyed_vectors = embedding_model.wv
+    elif hasattr(embedding_model, 'get_word_embedding'):
+        class ContextualWrapper:
+            def __init__(self, model):
+                self.model = model
+
+            def __getitem__(self, word):
+                return self.model.get_word_embedding(str(word))
+
+            def __contains__(self, word):
+                try:
+                    _ = self.model.get_word_embedding(str(word))
+                    return True
+                except:
+                    return False
+        keyed_vectors = ContextualWrapper(embedding_model)
+    else:
+        keyed_vectors = embedding_model
 
     # Filtrar palabras válidas (en el vocabulario)
     flat_words = np.array(closest_words).flatten().tolist()

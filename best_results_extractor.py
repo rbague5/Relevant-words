@@ -35,8 +35,8 @@ def extract_best_results(city_path, class_type):
 
 
 if __name__ == "__main__":
-    base_path = Path("C:/Users/Ants/Documents/Doctorat/Article 2/Relevant-words/results_by_city")
-    filtered_results_path = Path("C:/Users/Ants/Documents/Doctorat/Article 2/Relevant-words/results_by_city_paper")
+    base_path = Path("C:/Users/Ants/Documents/Doctorat/Article 2/Relevant-words/e5/results_by_city")
+    filtered_results_path = Path("C:/Users/Ants/Documents/Doctorat/Article 2/Relevant-words/e5/results_by_city_paper")
     all_results = {}
     for city in ["moscow", "madrid", "istanbul", "barcelona"]:
         logger.info(f"Checking city: {city.title()}")

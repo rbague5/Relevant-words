@@ -8,7 +8,7 @@ from nltk.tokenize import word_tokenize
 from utils import get_top_n_nearest_points
 
 
-def calculate_semantic_coherence(embedding_model, gmm, corpus_words, top_n=10):
+def calculate_semantic_coherence(embedding_model, top_words_per_cluster):
     """
     Computes semantic coherence of clusters using pairwise cosine similarity of top words.
     Works for Word2Vec, FastText, GloVe, SBERT, MiniLM, E5.
@@ -35,7 +35,7 @@ def calculate_semantic_coherence(embedding_model, gmm, corpus_words, top_n=10):
             return word in getattr(keyed_vectors, 'key_to_index', set())
 
     # Get top N words per cluster
-    top_words_per_cluster = get_top_n_nearest_points(gmm, embedding_model, corpus_words, n_points=top_n)
+    # top_words_per_cluster = get_top_n_nearest_points(gmm, embedding_model, corpus_words, n_points=top_n)
 
     coherence_scores = []
 
@@ -59,11 +59,11 @@ def calculate_perplexity(gmm, embedding_corpus):
     return np.exp(-log_likelihood / len(embedding_corpus))
 
 
-def calculate_topic_diversity(w2v_model, gmm, corpus, top_n_words):
+def calculate_topic_diversity(embedding_model, gmm, corpus, top_n_words):
     unique_words = set()
     total_words = 0
     for idx in range(len(gmm.means_)):
-        cluster_words = get_top_n_nearest_points(gmm, w2v_model, corpus, top_n_words)[
+        cluster_words = get_top_n_nearest_points(gmm, embedding_model, corpus, top_n_words)[
             idx
         ]
         unique_words.update(cluster_words)
@@ -112,6 +112,7 @@ def calculate_npmi(gmm, embedding_model, corpus_docs, top_n=10, window_size=10):
     # STATIC embeddings
     if hasattr(embedding_model, 'wv'):
         keyed_vectors = embedding_model.wv
+
         def has_word(word):
             return word in keyed_vectors.key_to_index
     # CONTEXTUAL embeddings
@@ -120,11 +121,20 @@ def calculate_npmi(gmm, embedding_model, corpus_docs, top_n=10, window_size=10):
             return True  # contextual embeddings can embed any word
     else:
         keyed_vectors = embedding_model
+
         def has_word(word):
             return word in getattr(keyed_vectors, 'key_to_index', set())
 
     # Step 1: Tokenize corpus
-    corpus_tokens = [token.lower() for doc in corpus_docs for token in word_tokenize(doc)]
+    corpus_tokens = []
+    for doc in corpus_docs:
+        # Ensure doc is a string, decode bytes if needed
+        if isinstance(doc, bytes):
+            doc = doc.decode('utf-8', errors='ignore')
+        elif not isinstance(doc, str):
+            doc = str(doc)
+        corpus_tokens.extend([token.lower() for token in word_tokenize(doc)])
+
     if not corpus_tokens:
         return 0.0
 
@@ -134,13 +144,14 @@ def calculate_npmi(gmm, embedding_model, corpus_docs, top_n=10, window_size=10):
     total_windows = 0
 
     for i in range(len(corpus_tokens)):
-        window = corpus_tokens[i+1:i+1+window_size]
+        window = corpus_tokens[i + 1:i + 1 + window_size]
         for w1 in [corpus_tokens[i]]:
             for w2 in window:
                 if w1 != w2:
                     pair = tuple(sorted((w1, w2)))
                     cooccurrence[pair] += 1
         total_windows += 1
+
     total_word_count = sum(word_counts.values())
 
     # Step 3: Get top words per cluster
@@ -157,8 +168,8 @@ def calculate_npmi(gmm, embedding_model, corpus_docs, top_n=10, window_size=10):
             pair = tuple(sorted((w1, w2)))
             count_joint = cooccurrence.get(pair, 0) + 1e-10
             p_joint = count_joint / (total_windows + 1e-10)
-            p1 = (word_counts.get(w1,0) + 1e-10) / (total_word_count + 1e-10)
-            p2 = (word_counts.get(w2,0) + 1e-10) / (total_word_count + 1e-10)
+            p1 = (word_counts.get(w1, 0) + 1e-10) / (total_word_count + 1e-10)
+            p2 = (word_counts.get(w2, 0) + 1e-10) / (total_word_count + 1e-10)
             if p_joint > 0:
                 pmi = np.log(p_joint / (p1 * p2))
                 npmi = pmi / (-np.log(p_joint)) if p_joint < 1 else 0

@@ -105,7 +105,7 @@ def topic_clustering(data, city, restaurant_id=None):
         # corpus = corpus_positive if class_review == 'positive' else corpus_negative
         embedding_model = utils.train_or_load_embedding_model(model_name=embedding_model_name)
         nouns = set(corpus_nouns_positive) if class_review == "positive" else set(corpus_nouns_negative)
-
+        # params_list = params_list[:2]
         for params in params_list:
             logger.info(f"Training GMM model with params: {params}")
             img_name = "_".join([f"{k}-{v}" for k, v in params.items()]).replace(".", "_").replace("covariance", "cov")
