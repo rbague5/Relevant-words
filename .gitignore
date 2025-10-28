@@ -10,3 +10,5 @@ venv
 /results_by_city/
 /results_by_city_legacy/
 /fasttext/
+/glove/
+/e5/
