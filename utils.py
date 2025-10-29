@@ -235,7 +235,9 @@ def find_elbow_point(scores):
 
 def get_top_n_nearest_points(gmm_model, embedding_model, corpus, n_points=10):
     """
-    Retrieve top N words closest to each cluster centroid.
+    Retrieve exactly N words per cluster with maximum semantic purity.
+    Each word is assigned to only its best cluster (highest similarity).
+    If a cluster lacks words, it "borrows" from other clusters based on relative preference.
     Works for Word2Vec, FastText, GloVe, SBERT, MiniLM, E5.
     Optimized for large corpora: no full embedding matrix is created.
     """
@@ -260,34 +262,80 @@ def get_top_n_nearest_points(gmm_model, embedding_model, corpus, n_points=10):
     if not vocab:
         return []
 
-    # --- Initialize TOP-N heaps per cluster ---
+    # --- Compute all similarities for all words ---
     n_clusters = len(gmm_model.means_)
-    top_heaps = [[] for _ in range(n_clusters)]  # Each heap stores (-similarity, word)
+    word_all_sims = {}  # {word: [sim_cluster_0, sim_cluster_1, ...]}
 
-    # --- Stream over corpus ---
     for word in vocab:
         try:
             vec = get_vec(word).reshape(1, -1)
         except Exception:
             continue  # skip words that cannot be embedded
 
-        # Compare to each cluster centroid
-        for i, centroid in enumerate(gmm_model.means_):
+        sims = []
+        for centroid in gmm_model.means_:
             sim = cosine_similarity(vec, centroid.reshape(1, -1))[0, 0]
+            sims.append(sim)
 
-            # Maintain top-N heap per cluster
-            if len(top_heaps[i]) < n_points:
-                heappush(top_heaps[i], (sim, word))
-            else:
-                heappushpop(top_heaps[i], (sim, word))
+        word_all_sims[word] = sims
 
-    # --- Extract sorted results ---
-    final_top_words = []
-    for heap in top_heaps:
-        sorted_words = [word for sim, word in sorted(heap, key=lambda x: -x[0])]
-        final_top_words.append(sorted_words)
+    if not word_all_sims:
+        return [[] for _ in range(n_clusters)]
 
-    return final_top_words
+    # --- Phase 1: Assign each word to its best cluster ---
+    cluster_words = [[] for _ in range(n_clusters)]
+    assigned_words = set()
+
+    for word, sims in word_all_sims.items():
+        best_cluster = max(range(n_clusters), key=lambda i: sims[i])
+        cluster_words[best_cluster].append((sims[best_cluster], word))
+
+    # Sort each cluster by similarity (descending)
+    for i in range(n_clusters):
+        cluster_words[i].sort(reverse=True)
+
+    # --- Phase 2: Balance clusters to ensure N words each ---
+    final_clusters = [[] for _ in range(n_clusters)]
+
+    # First, take top N from each cluster if available
+    for i in range(n_clusters):
+        for sim, word in cluster_words[i][:n_points]:
+            final_clusters[i].append(word)
+            assigned_words.add(word)
+
+    # Identify clusters that need more words
+    deficit_clusters = [(i, n_points - len(final_clusters[i]))
+                        for i in range(n_clusters)
+                        if len(final_clusters[i]) < n_points]
+
+    if deficit_clusters:
+        # Create a pool of unassigned words with their similarities
+        candidate_pool = []
+        for word, sims in word_all_sims.items():
+            if word not in assigned_words:
+                candidate_pool.append((word, sims))
+
+        # For each deficit cluster, find best available words
+        for cluster_idx, deficit in deficit_clusters:
+            # Score candidates by similarity to this cluster
+            scored_candidates = [
+                (sims[cluster_idx], word, sims)
+                for word, sims in candidate_pool
+            ]
+            scored_candidates.sort(reverse=True)
+
+            # Assign top words to this cluster
+            assigned_count = 0
+            for sim, word, sims in scored_candidates:
+                if word not in assigned_words and assigned_count < deficit:
+                    final_clusters[cluster_idx].append(word)
+                    assigned_words.add(word)
+                    assigned_count += 1
+
+                if assigned_count >= deficit:
+                    break
+
+    return final_clusters
 
 
 def select_best_clusters(cluster_metrics):

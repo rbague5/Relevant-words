@@ -4,7 +4,7 @@ import os
 def load_spacy():
     import spacy
     # spaCy config
-    spacy_model = "en_core_web_lg"
+    spacy_model = "en_core_web_trf"
     spacy.cli.download(spacy_model)
     nlp = spacy.load(spacy_model, disable=["ner", "parser"])
     return nlp

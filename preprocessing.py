@@ -8,7 +8,9 @@ import os
 import pickle
 import re
 from nltk.corpus import stopwords, words
+from tqdm import tqdm
 
+tqdm.pandas()
 
 def get_pickle(path, name):
     with open(os.path.join(path, name), 'rb') as handle:
@@ -60,17 +62,17 @@ def load_data_and_save_as_csv(city, f, lang, from_date="2018-01-01", to_date="20
     # Preprocess text in parallel
     start_time = time.time()
     logger.info("Preprocessing text")
-    stop_words = set(stopwords.words('english'))
-    english_words = set(words.words())
+    stop_words = set(w.lower() for w in stopwords.words('english'))
+    english_words = set(w.lower() for w in words.words())
 
-    reviews['text'] = reviews['text'].apply(lambda row: preprocess_text(row, nlp, stop_words=stop_words, english_words=english_words))
+    reviews['text'] = reviews['text'].progress_apply(lambda row: preprocess_text(row, nlp, stop_words=stop_words, english_words=english_words))
     total_seconds = round(time.time() - start_time, 2)
     logger.info(f"Text preprocessed, took {str(timedelta(seconds=int(total_seconds)))} sec -> {total_seconds / len(reviews):.4f} sec/review")
 
     # Retrieve nouns in parallel
     start_time = time.time()
     logger.info(f"Retrieving NOUNs from vocabulary, dataframe has got {len(reviews)} reviews.")
-    reviews['nouns'] = reviews['text'].apply(lambda row: retrieve_noun_vocabulary(row, nlp, stop_words=stop_words, english_words=english_words))
+    reviews['nouns'] = reviews['text'].progress_apply(lambda row: retrieve_noun_vocabulary(row, nlp, stop_words=stop_words, english_words=english_words))
 
     total_seconds = round(time.time() - start_time, 2)
     logger.info(f"NOUNs retrieved, took {str(timedelta(seconds=int(total_seconds)))} sec -> {total_seconds / len(reviews):.4f} sec/review")
@@ -91,19 +93,19 @@ def preprocess_text(text, nlp, stop_words, english_words):
 
     # Step 2: Process with spaCy for lemmatization and POS tagging
     doc = nlp(text)
-
     # Step 3: Extract lemmas, lowercase, filter pronouns
-    tokens = [token.lemma_.lower() for token in doc if token.lemma_ != "-PRON-" and token.is_alpha]
-
     # Step 4: Remove stopwords
-    tokens = [token for token in tokens if token not in stop_words]
-
     # Step 5: Remove non-English words
-    tokens = [token for token in tokens if token in english_words]
-
     # Step 6: Filter out short tokens
-    tokens = [token for token in tokens if len(token) > 2]
-
+    tokens = [
+        token.lemma_.lower()
+        for token in doc
+        if token.is_alpha
+           and token.lemma_ != "-PRON-"
+           and len(token) > 2
+           and token.text.lower() not in stop_words
+           and token.text.lower() in english_words
+    ]
     return tokens
 
 
