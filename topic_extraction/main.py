@@ -6,7 +6,7 @@ from topicgpt_python import *
 import sys
 from topicgpt_python import generate_topic_lvl1, assign_topics, correct_topics, generate_topic_lvl2
 
-os.environ["OPENAI_API_KEY"] = "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"
+os.environ["OPENAI_API_KEY"] = ""
 api = "openai"
 model = "gpt-5"
 
