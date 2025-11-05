@@ -12,3 +12,4 @@ venv
 /fasttext/
 /glove/
 /e5/
+/topic_extraction/data/

@@ -1,4 +1,4 @@
-pandas==2.0.3
+pandas==2.3.1
 scikit-learn==1.3.2
 gensim==4.2.0
 seaborn==0.13.2
@@ -7,3 +7,5 @@ nltk==3.8.1
 scipy==1.10.1
 sentence-transformers==4.1.0
 yake==0.4.8
+bertopic==0.17.3
+topicgpt-python==0.2.7

@@ -155,6 +155,112 @@ def calculate_scci_improved(embedding_corpus, labels, epsilon=1e-10,
     }
 
 
+def calculate_scci_gmm(embedding_corpus, gmm_model, epsilon=1e-10, normalize_output=True):
+    """
+    Calculates SCCI for Gaussian Mixture Models.
+
+    Args:
+        embedding_corpus (np.ndarray): Embeddings [n_samples, n_features]
+        gmm_model: Fitted sklearn.mixture.GaussianMixture object
+        epsilon (float): Small constant to avoid division by zero
+
+    Returns:
+        dict: GMM-SCCI results
+    """
+    from scipy.spatial.distance import mahalanobis
+
+    n_components = gmm_model.n_components
+    weights = gmm_model.weights_  # π_k
+    means = gmm_model.means_  # μ_k
+    covariances = gmm_model.covariances_  # Σ_k
+
+    # Get soft assignments
+    responsibilities = gmm_model.predict_proba(embedding_corpus)  # γ_ik
+
+    # 1. Compute Probabilistic Semantic Tightness (PST)
+    pst_scores = []
+
+    for k in range(n_components):
+        gamma_k = responsibilities[:, k]
+
+        # Compute weighted pairwise similarities
+        numerator = 0.0
+        denominator = 0.0
+
+        for i in range(len(embedding_corpus)):
+            for j in range(i + 1, len(embedding_corpus)):
+                weight = gamma_k[i] * gamma_k[j]
+                if weight > 1e-6:  # Skip negligible contributions
+                    sim = np.dot(embedding_corpus[i], embedding_corpus[j]) / (
+                            np.linalg.norm(embedding_corpus[i]) * np.linalg.norm(embedding_corpus[j])
+                    )
+                    numerator += weight * sim
+                    denominator += weight
+
+        if denominator > 0:
+            pst_k = numerator / denominator
+            pst_scores.append(pst_k)
+        else:
+            pst_scores.append(0.0)
+
+    # Weight by mixing coefficients
+    pst = np.sum(weights * np.array(pst_scores))
+
+    # 2. Compute Probabilistic Semantic Overlap (PSO)
+    pso = 0.0
+
+    for l in range(n_components):
+        for m in range(l + 1, n_components):
+            # Bhattacharyya coefficient for multivariate Gaussians
+            mu_diff = means[l] - means[m]
+            if gmm_model.covariance_type == 'full':
+                sigma_avg = (covariances[l] + covariances[m]) / 2
+                sigma_l = covariances[l]
+                sigma_m = covariances[m]
+            elif gmm_model.covariance_type == 'diag':
+                sigma_avg = np.diag((covariances[l] + covariances[m]) / 2)
+                sigma_l = np.diag(covariances[l])
+                sigma_m = np.diag(covariances[m])
+            elif gmm_model.covariance_type == 'spherical':
+                sigma_avg = np.eye(len(mu_diff)) * (covariances[l] + covariances[m]) / 2
+                sigma_l = np.eye(len(mu_diff)) * covariances[l]
+                sigma_m = np.eye(len(mu_diff)) * covariances[m]
+            else:  # tied
+                sigma_avg = covariances
+                sigma_l = covariances
+                sigma_m = covariances
+            # Mahalanobis term
+            try:
+                sigma_avg_inv = np.linalg.inv(sigma_avg)
+                mahal_dist = mu_diff.T @ sigma_avg_inv @ mu_diff
+                # Determinant term
+                det_avg = np.linalg.det(sigma_avg)
+                det_l = np.linalg.det(sigma_l)
+                det_m = np.linalg.det(sigma_m)
+                det_term = det_avg / np.sqrt(det_l * det_m)
+                bc_lm = np.exp(-0.125 * mahal_dist) * np.sqrt(det_term)
+                # Weight by component probabilities
+                pso += weights[l] * weights[m] * bc_lm
+
+            except np.linalg.LinAlgError:
+                # Singular covariance, skip this pair
+                continue
+
+    # 3. Calculate GMM-SCCI
+    gmm_scci = pst / (pso + epsilon)
+
+    if normalize_output:
+        # Using sigmoid-like transformation to bound the score
+        scci_normalized = gmm_scci / (1 + gmm_scci)
+        gmm_scci = scci_normalized
+
+    return {
+        'gmm_scci': round(gmm_scci, 4),
+        'pst': round(pst, 4),
+        'pso': round(pso, 4),
+        'n_components': n_components
+    }
+
 # Additional utility function for robustness testing
 def calculate_scci_bootstrap(embedding_corpus, labels, n_bootstrap=100,
                              sample_fraction=0.8, **scci_kwargs):

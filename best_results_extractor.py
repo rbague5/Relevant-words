@@ -35,10 +35,11 @@ def extract_best_results(city_path, class_type):
 
 
 if __name__ == "__main__":
-    base_path = Path("C:/Users/Ants/Documents/Doctorat/Article 2/Relevant-words/e5/results_by_city")
-    filtered_results_path = Path("C:/Users/Ants/Documents/Doctorat/Article 2/Relevant-words/e5/results_by_city_paper")
+    base_path = Path("./results_by_city")
+    filtered_results_path = Path("./results_by_city_paper")
+    os.makedirs(filtered_results_path, exist_ok=True)
     all_results = {}
-    for city in ["moscow", "madrid", "istanbul", "barcelona"]:
+    for city in ["moscow", "istanbul", "madrid", "barcelona"]:
         logger.info(f"Checking city: {city.title()}")
         all_results[city] = {}
         for class_type in ["positive", "negative"]:
@@ -58,8 +59,8 @@ if __name__ == "__main__":
                         if "scci" in v and isinstance(v["scci"], dict):
                             v["scci"] = v["scci"]["scci"]
                 all_results[city][class_type][different_config] = data
-    with open("all_results.json", "w", encoding="utf-8") as f:
-        json.dump(all_results, f, indent=4)
+        with open(os.path.join(filtered_results_path, f"all_results_{city}.json"), "w", encoding="utf-8") as f:
+            json.dump(all_results, f, indent=4)
 
     best_results = {}
     maximize_metrics = {"semantic_coherence", "scci", "inter_distance", "silhouette_score", "npmi"}
@@ -78,7 +79,7 @@ if __name__ == "__main__":
                             metric_best[metric_name] = {
                                 "config": config_name,
                                 "k": k,
-                                "value": metric_value
+                                "value": round(metric_value, 4)
                             }
                             continue
 
@@ -88,20 +89,20 @@ if __name__ == "__main__":
                                 metric_best[metric_name] = {
                                     "config": config_name,
                                     "k": k,
-                                    "value": metric_value
+                                    "value": round(metric_value, 4)
                                 }
                         elif metric_name in minimize_metrics:
                             if metric_value < metric_best[metric_name]["value"]:
                                 metric_best[metric_name] = {
                                     "config": config_name,
                                     "k": k,
-                                    "value": metric_value
+                                    "value": round(metric_value, 4)
                                 }
             # Save for this class type
             best_results[city][class_type] = metric_best
 
-    with open("best_results.json", "w", encoding="utf-8") as f:
-        json.dump(best_results, f, indent=4)
+        with open(os.path.join(filtered_results_path, f"best_results_{city}.json"), "w", encoding="utf-8") as f:
+            json.dump(best_results, f, indent=4)
 
     for city, sentiment_data in best_results.items():
         for class_type in ["positive", "negative"]:
@@ -117,7 +118,7 @@ if __name__ == "__main__":
                 if figure_src.exists():
                     shutil.copy(figure_src, dest_img)
                 else:
-                    print(f"⚠️ Figure not found: {figure_src}")
+                    print(f"Figure not found: {figure_src}")
 
                 # Copy topics directory
                 dest_topics = os.path.join(dest_topics, f"{metric}_{class_type}")
@@ -129,4 +130,4 @@ if __name__ == "__main__":
                         elif item.is_dir():
                             shutil.copytree(item, dest_topics / item.name, dirs_exist_ok=True)
                 else:
-                    print(f"⚠️ Topics folder missing: {topics_src}")
+                    print(f"Topics folder missing: {topics_src}")

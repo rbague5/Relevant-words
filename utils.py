@@ -15,13 +15,15 @@ from matplotlib import pyplot as plt
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.mixture import GaussianMixture
-from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score, pairwise_distances
+from sklearn.metrics import silhouette_score
 from sklearn.manifold import TSNE
 from sklearn.feature_extraction.text import CountVectorizer
-from config import rating_threshold, top_n_nearest_points
+from config import rating_threshold
 from gensim.models import Word2Vec, KeyedVectors
 import gensim.downloader as api
 from nltk.corpus import wordnet as wn
+
+from new_scci import calculate_scci_gmm
 
 _model_cache = {}  # Global model cache
 
@@ -494,6 +496,7 @@ def train_gmm_model(embedding_model, nouns, model_path, n_clusters_range=range(3
         inter_distance = calculate_inter_distances(gmm, embedding_corpus)
         # npmi = calculate_npmi(gmm, corpus, keyed_vectors, top_n=top_n_points)
         scci = calculate_scci_improved(embedding_corpus, labels, normalize_output=True)
+        # gmm_scci = calculate_scci_gmm(embedding_corpus, gmm)
 
         metrics = {
             "silhouette_score": round(sil_score, 4),
@@ -501,7 +504,8 @@ def train_gmm_model(embedding_model, nouns, model_path, n_clusters_range=range(3
             "intra_distance": round(intra_distance, 4),
             "inter_distance": round(inter_distance, 4),
             # "npmi": round(npmi, 4),
-            "scci": scci
+            "scci": scci,
+            # "gmm_scci": gmm_scci
         }
 
         cluster_metrics[model_name] = metrics
