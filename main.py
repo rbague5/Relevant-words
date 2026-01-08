@@ -18,6 +18,8 @@ def main_analysis_by_city(data, city):
 def main_analysis_by_restaurant(data, city):
     most_commented_restaurants = data['itemId'].value_counts()
     for restaurant_id in most_commented_restaurants.head(top_n_restaurants).index:
+        if str(restaurant_id) == "3179219":
+            continue
         logger.info(f"Doing topic clustering for city: {city} and restaurant id: {restaurant_id}")
         topic_clustering(data, city, restaurant_id)
 
@@ -99,7 +101,7 @@ def topic_clustering(data, city, restaurant_id=None):
         'scci': 1,
     }
 
-    for class_review in ['positive', 'negative']:
+    for class_review in ["positive", "negative"]:
         all_clusters_metrics = {}
         logger.info(f"Calculating {class_review} with model: {embedding_model_name} for city: {city}")
         # corpus = corpus_positive if class_review == 'positive' else corpus_negative
@@ -111,14 +113,14 @@ def topic_clustering(data, city, restaurant_id=None):
             img_name = "_".join([f"{k}-{v}" for k, v in params.items()]).replace(".", "_").replace("covariance", "cov")
 
             if restaurant_id is not None:
-                city_path = os.path.join("results_by_restaurant", str(city), str(restaurant_id))
+                city_path = os.path.join(f"results_by_restaurant_top{top_n_nearest_points}", str(city), str(restaurant_id))
                 embedding_model_path = os.path.join(city_path, img_name, w2v_models_path_by_city, embedding_model_name)
                 gmm_path = os.path.join(city_path, img_name, gmm_models_path_by_city, class_review)
                 topics_path_images = os.path.join(city_path, img_name, figures_path_by_city)
                 topics_path_nouns = os.path.join(city_path, img_name, topics_clusters_path_by_city)
                 cluster_metrics_path = os.path.join(city_path, img_name, "metrics", class_review)
             else:
-                city_path = os.path.join("results_by_city", str(city))
+                city_path = os.path.join(f"results_by_city_top{top_n_nearest_points}", str(city))
                 embedding_model_path = os.path.join(city_path, img_name, w2v_models_path_by_city, embedding_model_name)
                 gmm_path = os.path.join(city_path, img_name, gmm_models_path_by_city, class_review)
                 topics_path_images = os.path.join(city_path, img_name, figures_path_by_city)
@@ -199,10 +201,9 @@ if __name__ == "__main__":
         logger.info(f"N. of rating: {data['rating'].value_counts().sort_index(ascending=False)}")
         logger.info(f"Review dates between: {data['date'].min()} and {data['date'].max()}")
 
-        main_analysis_by_city(data, city)
-        # main_analysis_by_restaurant(data, city)
+        # main_analysis_by_city(data, city)
+        main_analysis_by_restaurant(data, city)
         # main_analysis_by_restaurant_tf_itf(data, city)
-
 
 
 # #############################

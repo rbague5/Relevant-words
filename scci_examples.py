@@ -6,11 +6,22 @@ from sklearn.preprocessing import normalize
 from new_scci import calculate_scci_improved
 from sklearn.decomposition import PCA
 
+scenarios_names = {
+    "Scenario 1": "Tight clusters with large separation in orthogonal directions",
+    "Scenario 2": "Tight clusters with moderate separation",
+    "Scenario 3": "Large clusters that are close but not overlapping",
+    "Scenario 4": "Large clusters positioned very close, almost touching, but non-overlapping",
+    "Scenario 5": "Loose, dispersed clusters with some separation",
+    "Scenario 6": "Tight clusters located in nearly the same region, strongly overlapping",
+    "Scenario 7": "Randomly distributed points with arbitrary cluster labels",
+    "Scenario 8": "One tight cluster, one loose cluster, and one cluster partially overlapping another",
+    "Scenario 9": "Few normal clusters combined with many singleton clusters",
+}
+
 def generate_test_scenarios():
     """Generate different clustering scenarios to test SCCI behavior."""
 
     scenarios = {}
-
     # Scenario 1: Perfect clustering - tight and well-separated
     print("Generating Scenario 1: Perfect clustering")
     np.random.seed(42)
@@ -18,10 +29,10 @@ def generate_test_scenarios():
     cluster2 = normalize(np.random.randn(20, 50) * 0.1 + np.array([0, 10] + [0] * 48).reshape(1, -1))
     cluster3 = normalize(np.random.randn(20, 50) * 0.1 + np.array([0, 0, 10] + [0] * 47).reshape(1, -1))
 
-    scenarios['perfect'] = {
+    scenarios['tight_wide_separation'] = {
         'embeddings': np.vstack([cluster1, cluster2, cluster3]),
         'labels': np.array([0] * 20 + [1] * 20 + [2] * 20),
-        'description': 'Perfect: Tight clusters, well-separated (orthogonal)'
+        'description': 'Scenario 1'
     }
 
     # Scenario 2: Good clustering - tight but some overlap
@@ -31,53 +42,75 @@ def generate_test_scenarios():
     cluster2 = normalize(np.random.randn(20, 50) * 0.2 + np.array([1, 5] + [0] * 48).reshape(1, -1))
     cluster3 = normalize(np.random.randn(20, 50) * 0.2 + np.array([0, 0, 5] + [0] * 47).reshape(1, -1))
 
-    scenarios['good'] = {
+    scenarios['tight_moderate_separation'] = {
         'embeddings': np.vstack([cluster1, cluster2, cluster3]),
         'labels': np.array([0] * 20 + [1] * 20 + [2] * 20),
-        'description': 'Good: Tight clusters, moderate separation'
+        'description': 'Scenario 2'
     }
 
-    # Scenario 3: Poor clustering - loose clusters
-    print("Generating Scenario 3: Poor clustering - loose")
+    print("Generating Scenario 3: Fair clustering")
+    np.random.seed(44)
+    cluster1 = normalize(np.random.randn(20, 50) * 0.35 + np.array([3, 1] + [0] * 48).reshape(1, -1))
+    cluster2 = normalize(np.random.randn(20, 50) * 0.35 + np.array([1, 3] + [0] * 48).reshape(1, -1))
+    cluster3 = normalize(np.random.randn(20, 50) * 0.35 + np.array([0, -3] + [0] * 48).reshape(1, -1))
+
+    scenarios['large_close_non_overlapping'] = {
+        'embeddings': np.vstack([cluster1, cluster2, cluster3]),
+        'labels': np.array([0] * 20 + [1] * 20 + [2] * 20),
+        'description': 'Scenario 3'
+    }
+
+    # Scenario 4: Weak clustering - large clusters, very close, almost touching
+    print("Generating Scenario 4: Weak clustering")
+    np.random.seed(45)
+    cluster1 = normalize(np.random.randn(20, 50) * 0.45 + np.array([2, 0.5] + [0] * 48).reshape(1, -1))
+    cluster2 = normalize(np.random.randn(20, 50) * 0.45 + np.array([0.5, 2] + [0] * 48).reshape(1, -1))
+    cluster3 = normalize(np.random.randn(20, 50) * 0.45 + np.array([-2, -1] + [0] * 48).reshape(1, -1))
+
+    scenarios['large_very_close_non_overlapping'] = {
+        'embeddings': np.vstack([cluster1, cluster2, cluster3]),
+        'labels': np.array([0] * 20 + [1] * 20 + [2] * 20),
+        'description': 'Scenario 4'
+    }
+
+    # Scenario 5: Poor clustering - loose clusters
+    print("Generating Scenario 5: Poor clustering - loose")
     np.random.seed(44)
     cluster1 = normalize(np.random.randn(20, 50) * 1.0 + np.array([2, 0] + [0] * 48).reshape(1, -1))
     cluster2 = normalize(np.random.randn(20, 50) * 1.0 + np.array([0, 2] + [0] * 48).reshape(1, -1))
     cluster3 = normalize(np.random.randn(20, 50) * 1.0 + np.array([1, 1] + [0] * 48).reshape(1, -1))
-
-    scenarios['loose'] = {
+    scenarios['loose_clusters_with_gap'] = {
         'embeddings': np.vstack([cluster1, cluster2, cluster3]),
         'labels': np.array([0] * 20 + [1] * 20 + [2] * 20),
-        'description': 'Poor: Loose clusters, some separation'
+        'description': 'Scenario 5'
     }
 
-    # Scenario 4: Poor clustering - high overlap
-    print("Generating Scenario 4: Poor clustering - overlapping")
+    # Scenario 6: Poor clustering - high overlap
+    print("Generating Scenario 6: Poor clustering - overlapping")
     np.random.seed(45)
     base_direction = np.array([1, 1, 1] + [0] * 47).reshape(1, -1)
     cluster1 = normalize(np.random.randn(20, 50) * 0.3 + base_direction)
     cluster2 = normalize(np.random.randn(20, 50) * 0.3 + base_direction * 1.1)
     cluster3 = normalize(np.random.randn(20, 50) * 0.3 + base_direction * 0.9)
-
-    scenarios['overlap'] = {
+    scenarios['tight_high_overlap'] = {
         'embeddings': np.vstack([cluster1, cluster2, cluster3]),
         'labels': np.array([0] * 20 + [1] * 20 + [2] * 20),
-        'description': 'Poor: Tight clusters but highly overlapping'
+        'description': 'Scenario 6'
     }
 
-    # Scenario 5: Worst case - random assignment
-    print("Generating Scenario 5: Random clustering")
+    # Scenario 7: Worst case - random assignment
+    print("Generating Scenario 7: Random clustering")
     np.random.seed(46)
     random_embeddings = normalize(np.random.randn(60, 50))
     random_labels = np.random.randint(0, 3, 60)
-
-    scenarios['random'] = {
+    scenarios['random_assignment'] = {
         'embeddings': random_embeddings,
         'labels': random_labels,
-        'description': 'Worst: Random cluster assignment'
+        'description': 'Scenario 7'
     }
 
-    # Scenario 6: Mixed quality - some good, some bad clusters
-    print("Generating Scenario 6: Mixed quality")
+    # Scenario 8: Mixed quality - some good, some bad clusters
+    print("Generating Scenario 8: Mixed quality")
     np.random.seed(47)
     # One tight cluster
     cluster1 = normalize(np.random.randn(20, 50) * 0.1 + np.array([10] + [0] * 49).reshape(1, -1))
@@ -85,26 +118,24 @@ def generate_test_scenarios():
     cluster2 = normalize(np.random.randn(20, 50) * 1.0)
     # One overlapping with first
     cluster3 = normalize(np.random.randn(20, 50) * 0.2 + np.array([9] + [0] * 49).reshape(1, -1))
-
-    scenarios['mixed'] = {
+    scenarios['mixed_cluster_shapes'] = {
         'embeddings': np.vstack([cluster1, cluster2, cluster3]),
         'labels': np.array([0] * 20 + [1] * 20 + [2] * 20),
-        'description': 'Mixed: One tight, one loose, one overlapping'
+        'description': 'Scenario 8'
     }
 
-    # Scenario 7: Many singleton clusters
-    print("Generating Scenario 7: Many singletons")
+    # Scenario 9: Many singleton clusters
+    print("Generating Scenario 9: Many singletons")
     np.random.seed(48)
     # Few normal clusters
     cluster1 = normalize(np.random.randn(5, 50) * 0.1 + np.array([5] + [0] * 49).reshape(1, -1))
     cluster2 = normalize(np.random.randn(5, 50) * 0.1 + np.array([0, 5] + [0] * 48).reshape(1, -1))
     # Many singletons
     singletons = normalize(np.random.randn(20, 50))
-
-    scenarios['singletons'] = {
+    scenarios['singleton_heavy'] = {
         'embeddings': np.vstack([cluster1, cluster2, singletons]),
         'labels': np.array([0] * 5 + [1] * 5 + list(range(2, 22))),
-        'description': 'Edge case: Many singleton clusters'
+        'description': 'Scenario 9'
     }
 
     return scenarios
@@ -199,6 +230,7 @@ def test_scci_scenarios():
 
         # Store results
         results[name] = {
+            "scenario": scenario["description"],
             'standard': result_standard,
             'weighted': result_weighted,
             'normalized': result_normalized
@@ -229,13 +261,18 @@ def create_comparison_plot(results):
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-    scenarios = list(results.keys())
+    scenarios = [desc["scenario"] for desc in results.values()]
 
     # Plot 1: SCCI scores comparison
     ax = axes[0, 0]
-    scci_scores = [results[s]['standard']['scci'] for s in scenarios]
+    scci_scores = [results[key]['standard']['scci'] for key in results]
+
+    # Set a cap value
+    cap_value = 20  # adjust based on your data
+    capped_scores = [min(score, cap_value) for score in scci_scores]
+
     colors = ['green' if score > 5 else 'orange' if score > 2 else 'red' for score in scci_scores]
-    bars = ax.bar(range(len(scenarios)), scci_scores, color=colors)
+    bars = ax.bar(range(len(scenarios)), capped_scores, color=colors)
     ax.set_xticks(range(len(scenarios)))
     ax.set_xticklabels(scenarios, rotation=45, ha='right')
     ax.set_ylabel('SCCI Score')
@@ -244,16 +281,19 @@ def create_comparison_plot(results):
     ax.axhline(y=2, color='orange', linestyle='--', alpha=0.3, label='Moderate threshold')
     ax.legend()
 
-    # Add value labels on bars
-    for bar, score in zip(bars, scci_scores):
+    # Add value labels showing actual values, with arrows for capped ones
+    for bar, actual_score, capped_score in zip(bars, scci_scores, capped_scores):
         height = bar.get_height()
+        label = f'{actual_score:.2f}'
+        if actual_score > cap_value:
+            label += ' ↑'  # indicator for values exceeding cap
         ax.text(bar.get_x() + bar.get_width() / 2., height,
-                f'{score:.2f}', ha='center', va='bottom')
+                label, ha='center', va='bottom', fontweight='bold' if actual_score > cap_value else 'normal')
 
     # Plot 2: ST vs SO scatter
     ax = axes[0, 1]
-    st_scores = [results[s]['standard']['st'] for s in scenarios]
-    so_scores = [results[s]['standard']['so'] for s in scenarios]
+    st_scores = [results[s]['standard']['st'] for s in results]
+    so_scores = [results[s]['standard']['so'] for s in results]
 
     scatter = ax.scatter(so_scores, st_scores, s=100, c=scci_scores, cmap='RdYlGn',
                          edgecolors='black', linewidth=1)
@@ -269,7 +309,7 @@ def create_comparison_plot(results):
 
     # Plot 3: Normalized SCCI comparison
     ax = axes[1, 0]
-    norm_scores = [results[s]['normalized']['scci'] for s in scenarios]
+    norm_scores = [results[s]['normalized']['scci'] for s in results]
     colors = ['green' if score > 0.8 else 'orange' if score > 0.6 else 'red' for score in norm_scores]
     bars = ax.bar(range(len(scenarios)), norm_scores, color=colors)
     ax.set_xticks(range(len(scenarios)))

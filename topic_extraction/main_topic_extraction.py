@@ -2,18 +2,27 @@ import os
 import json
 import re
 
+from collections import Counter
 from topicgpt_python import *
 import sys
 from topicgpt_python import generate_topic_lvl1, assign_topics, correct_topics, generate_topic_lvl2
 
-os.environ["OPENAI_API_KEY"] = ""
+from config import top_n_nearest_points
+from utils import logger
+
+os.environ["OPENAI_API_KEY"] = "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"
 api = "openai"
-model = "gpt-5"
+model = "gpt-4o"
+is_verbose = True
+is_refine_topics = False
+is_generate_subtopics = True
 
 # Your existing code to load clusters
-for city in ["moscow", "istanbul", "madrid", "barcelona"]:
+# for city in ["moscow", "madrid", "istanbul", "barcelona"]
+for city in ["moscow"]:
+    summary = {}
     for metric in ["inter_distance_negative", "inter_distance_positive", "intra_distance_negative", "intra_distance_positive", "scci_negative", "scci_positive", "semantic_coherence_negative", "semantic_coherence_positive", "silhouette_score_negative", "silhouette_score_positive"]:
-        base_path = os.path.join("..", "results_by_city_paper", city, "results", "topics", metric)
+        base_path = os.path.join("..", f"results_by_city_paper_top{top_n_nearest_points}", city, "results", "topics", metric)
 
         cluster_files = sorted([f for f in os.listdir(base_path) if f.endswith(".txt")])
         clusters = {}
@@ -23,7 +32,7 @@ for city in ["moscow", "istanbul", "madrid", "barcelona"]:
                 words = [w.strip() for w in f if w.strip()]
                 clusters[topic_id] = words
 
-        print(f"Loaded {len(clusters)} clusters.")
+        logger.info(f"Loaded {len(clusters)} clusters.")
 
         # Convert your clusters to the required JSONL format
         output_dir = "data/input"
@@ -41,16 +50,13 @@ for city in ["moscow", "istanbul", "madrid", "barcelona"]:
                 }
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-        print(f"Created JSONL file: {data_sample}")
-        is_verbose = True
-        is_refine_topics = False
-        is_generate_subtopics = True
+        logger.info(f"Created JSONL file: {data_sample}")
 
-        os.makedirs(f"data/output/{city}/{metric}", exist_ok=True)
+        os.makedirs(f"data/output/top_{top_n_nearest_points}/{city}/{metric}", exist_ok=True)
         generation_prompt = "data/prompt/generation_1.txt"
         generation_seed = "data/input/seed_topics.txt"
-        generation_output = f"data/output/{city}/{metric}/generation_1.jsonl"
-        generation_topic_output = f"data/output/{city}/{metric}/generation_1.md"
+        generation_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/generation_1.jsonl"
+        generation_topic_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/generation_1.md"
 
         generate_topic_lvl1(
             api,
@@ -64,9 +70,9 @@ for city in ["moscow", "istanbul", "madrid", "barcelona"]:
         )
 
         refinement_prompt = "data/prompt/refinement.txt"
-        refinement_output = f"data/output/{city}/{metric}/refinement.jsonl"
-        refinement_topic_output = f"data/output/{city}/{metric}/refinement.md"
-        refinement_mapping_file = f"data/output/{city}/{metric}/refinement_mapping.json"
+        refinement_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/refinement.jsonl"
+        refinement_topic_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/refinement.md"
+        refinement_mapping_file = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/refinement_mapping.json"
         refinement_remove = False
 
         # Optional: Refine topics if needed
@@ -84,9 +90,10 @@ for city in ["moscow", "istanbul", "madrid", "barcelona"]:
                 mapping_file=refinement_mapping_file
             )
 
+
         generation_2_prompt = "data/prompt/generation_2.txt"
-        generation_2_output = f"data/output/{city}/{metric}/generation_2.jsonl"
-        generation_2_topic_output = f"data/output/{city}/{metric}/generation_2.md"
+        generation_2_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/generation_2.jsonl"
+        generation_2_topic_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/generation_2.md"
 
         # Optional: Generate subtopics
         if is_generate_subtopics:
@@ -101,36 +108,40 @@ for city in ["moscow", "istanbul", "madrid", "barcelona"]:
                 verbose=is_verbose,
             )
 
-
         assignment_prompt = "data/prompt/assignment.txt"
-        assignment_output = f"data/output/{city}/{metric}/assignment.jsonl"
+        assignment_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/assignment.jsonl"
+
+        if is_generate_subtopics:
+            generation_topic_output = generation_2_topic_output
 
         # Assignment
         assign_topics(
             api,
-            model,
+            "gpt-4o-mini",
             data_sample,
             assignment_prompt,
             assignment_output,
-            generation_2_topic_output,  # TODO: change to generation_2 if you have subtopics, or config['refinement']['topic_output'] if you refined topics
+            generation_topic_output,  # generation_topic_output, generation_2_topic_output TODO: change to generation_2 if you have subtopics, or config['refinement']['topic_output'] if you refined topics
             verbose=is_verbose,
         )
 
         correction_prompt = "data/prompt/correction.txt"
-        correction_output = f"data/output/{city}/{metric}/assignment_corrected.jsonl"
+        correction_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/assignment_corrected.jsonl"
         # Correction
         correct_topics(
             api,
-            model,
+            "gpt-4o-mini",
             assignment_output,
             correction_prompt,
-            generation_2_topic_output,  # TODO: change to generation_2 if you have subtopics, or config['refinement']['topic_output'] if you refined topics
+            generation_topic_output,  # generation_topic_output, generation_2_topic_output TODO: change to generation_2 if you have subtopics, or config['refinement']['topic_output'] if you refined topics
             correction_output,
             verbose=is_verbose,
         )
 
         data = []
         pattern = re.compile(r"\[\d+\]\s*(.*?):\s*(.*?)(?=\n*\[\d+\]|$)", re.DOTALL)
+
+        topics = []
         # Convert .jsonl to .json (list)
         with open(correction_output, "r", encoding="utf-8") as infile:
             for line in infile:
@@ -153,6 +164,7 @@ for city in ["moscow", "istanbul", "madrid", "barcelona"]:
                                 "explanation": explanation
                             }
                             data.append(extracted_data)
+                            topics.append(topic_name)
                     else:
                         # if no structured match, store raw response
                         data.append({
@@ -163,9 +175,12 @@ for city in ["moscow", "istanbul", "madrid", "barcelona"]:
                             "topic": None,
                             "explanation": responses or None
                         })
+                        topics.append("None")
 
+        c = Counter(topics)
+        summary[metric] = dict(c)
         # Generate output path safely
-        output_path = os.path.join("data", "results", city, f"{metric}.json")
+        output_path = os.path.join("data", f"results_top_{top_n_nearest_points}", city, f"{metric}.json")
         # Ensure output folder exists
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -173,5 +188,6 @@ for city in ["moscow", "istanbul", "madrid", "barcelona"]:
         with open(output_path, "w", encoding="utf-8") as outfile:
             json.dump(data, outfile, ensure_ascii=False, indent=2)
 
-        print(f"Converted {correction_output} to {output_path}")
-
+        logger.info(f"Converted {correction_output} to {output_path}")
+    with open(os.path.join("data", f"results_top_{top_n_nearest_points}", f"summary_{city}.json"), "w", encoding="utf-8") as outfile:
+        json.dump(summary, outfile, ensure_ascii=False, indent=2)

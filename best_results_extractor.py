@@ -35,15 +35,19 @@ def extract_best_results(city_path, class_type):
 
 
 if __name__ == "__main__":
-    base_path = Path("./results_by_city")
-    filtered_results_path = Path("./results_by_city_paper")
+    top_n = "20"
+    base_path = Path(f"./results_by_city_top{top_n}")
+    filtered_results_path = Path(f"./results_by_city_paper_top{top_n}")
+
     os.makedirs(filtered_results_path, exist_ok=True)
     all_results = {}
-    for city in ["moscow", "istanbul", "madrid", "barcelona"]:
+    # for city in ["moscow", "madrid", "istanbul", "barcelona"]
+    for city in ["moscow"]:
         logger.info(f"Checking city: {city.title()}")
         all_results[city] = {}
         for class_type in ["positive", "negative"]:
             logger.info(f"Class type: {class_type}")
+
             city_path = os.path.join(base_path, city)
             different_combinations_names = os.listdir(city_path)
             logger.info(f"Different combinations: {different_combinations_names}")

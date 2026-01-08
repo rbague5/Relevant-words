@@ -60,22 +60,21 @@ def load_data_and_save_as_csv(city, f, lang, from_date="2018-01-01", to_date="20
     nlp = load_spacy()
     reviews = reviews.drop_duplicates(subset=['reviewId']).reset_index(drop=True)
     # Preprocess text in parallel
-    start_time = time.time()
     logger.info("Preprocessing text")
     stop_words = set(w.lower() for w in stopwords.words('english'))
     english_words = set(w.lower() for w in words.words())
-
-    reviews['text'] = reviews['text'].progress_apply(lambda row: preprocess_text(row, nlp, stop_words=stop_words, english_words=english_words))
-    total_seconds = round(time.time() - start_time, 2)
-    logger.info(f"Text preprocessed, took {str(timedelta(seconds=int(total_seconds)))} sec -> {total_seconds / len(reviews):.4f} sec/review")
 
     # Retrieve nouns in parallel
     start_time = time.time()
     logger.info(f"Retrieving NOUNs from vocabulary, dataframe has got {len(reviews)} reviews.")
     reviews['nouns'] = reviews['text'].progress_apply(lambda row: retrieve_noun_vocabulary(row, nlp, stop_words=stop_words, english_words=english_words))
-
     total_seconds = round(time.time() - start_time, 2)
     logger.info(f"NOUNs retrieved, took {str(timedelta(seconds=int(total_seconds)))} sec -> {total_seconds / len(reviews):.4f} sec/review")
+
+    start_time = time.time()
+    reviews['text'] = reviews['text'].progress_apply(lambda row: preprocess_text(row, nlp, stop_words=stop_words, english_words=english_words))
+    total_seconds = round(time.time() - start_time, 2)
+    logger.info(f"Text preprocessed, took {str(timedelta(seconds=int(total_seconds)))} sec -> {total_seconds / len(reviews):.4f} sec/review")
 
     # Save the processed DataFrame to a CSV file
     logger.info("Writing to CSV file")
@@ -109,8 +108,8 @@ def preprocess_text(text, nlp, stop_words, english_words):
     return tokens
 
 
-def retrieve_noun_vocabulary(tokens, nlp, stop_words=None, english_words=None):
-    doc = nlp(" ".join(tokens))  # Create a new doc from preprocessed tokens
+def retrieve_noun_vocabulary(text, nlp, stop_words=None, english_words=None):
+    doc = nlp(text)  # Create a new doc from preprocessed tokens
 
     # Extract lemmatized nouns
     nouns = [

@@ -3,6 +3,7 @@ import json
 import logging
 import math
 import os
+import pickle
 from collections import defaultdict, Counter
 from heapq import heappush, heappushpop
 from itertools import product
@@ -575,13 +576,22 @@ def retrieve_best_model_results(best_gmm_model_name, trained_models, embedding_m
         keyed_vectors = embedding_model
 
     # Flatten + filtrar palabras fuera del vocabulario
-    flat_words = [word for word in np.array(closest_words).flatten().tolist() if word in keyed_vectors]
+    try:
+        flat_words = [word for word in np.array(closest_words).flatten().tolist() if word in keyed_vectors]
+        # Embeddings y etiquetas
+        embedding_corpus = np.array([keyed_vectors[word] for word in flat_words])
+        labels = np.indices(np.array(closest_words).shape)[0].flatten().tolist()[:len(embedding_corpus)]
+    except Exception as e:
+        flat_words = [ word for group in closest_words for word in (group if isinstance(group, (list, tuple)) else [group]) if word in keyed_vectors]
+        embedding_corpus = np.array([keyed_vectors[word] for word in flat_words])
+        labels = []
+        for idx, group in enumerate(closest_words):
+            for word in (group if isinstance(group, (list, tuple)) else [group]):
+                if word in keyed_vectors:
+                    labels.append(idx)
+
     if not flat_words:
         raise ValueError("No valid words found in the model vocabulary.")
-
-    # Embeddings y etiquetas
-    embedding_corpus = np.array([keyed_vectors[word] for word in flat_words])
-    labels = np.indices(np.array(closest_words).shape)[0].flatten().tolist()[:len(embedding_corpus)]
 
     # Predicción de probabilidad logarítmica por muestra
     probabilities = model.score_samples(embedding_corpus)
@@ -654,10 +664,12 @@ def perform_tsne(embedding_model, labels, closest_words, figure_path, review_typ
     else:
         keyed_vectors = embedding_model
 
-    # Filtrar palabras válidas (en el vocabulario)
-    flat_words = np.array(closest_words).flatten().tolist()
-    filtered = [(word, keyed_vectors[word]) for word in flat_words if word in keyed_vectors]
+    try:
+        flat_words = np.array(closest_words).flatten().tolist()
+    except Exception as e:
+        flat_words = [w for sublist in closest_words for w in (sublist if isinstance(sublist, list) else [sublist])]
 
+    filtered = [(word, keyed_vectors[word]) for word in flat_words if word in keyed_vectors]
     if not filtered:
         raise ValueError("No valid words found in the model vocabulary.")
 
@@ -667,10 +679,30 @@ def perform_tsne(embedding_model, labels, closest_words, figure_path, review_typ
     # Asegurar que perplexity sea válida
     n_samples = len(embedding_corpus)
     perplexity = min(max(5, n_samples // 3), 30)
+    random_state = 42
 
     # t-SNE
-    tsne = TSNE(n_components=2, n_iter=n_iter, random_state=42, perplexity=perplexity)
+    tsne = TSNE(n_components=2, n_iter=n_iter, random_state=random_state, perplexity=perplexity)
     X_embedded = tsne.fit_transform(X=embedding_corpus)
+
+    tsne_data = {
+        "embedding_corpus": embedding_corpus,
+        "X_embedded": X_embedded,
+        "words": words,
+        "labels": labels,
+        "n_samples": n_samples,
+        "perplexity": perplexity,
+        "n_iter": n_iter,
+        "random_state": random_state,
+    }
+
+    # Crear carpeta si no existe
+    os.makedirs(figure_path, exist_ok=True)
+
+    save_path = figure_path + "plot_pkl_obj/" + f"tsne_inputs_{metric}_{review_type}_{str(len(set(labels)))}.pkl"
+    os.makedirs(os.path.join(figure_path, "plot_pkl_obj"), exist_ok=True)
+    with open(save_path, "wb") as f:
+        pickle.dump(tsne_data, f)
 
     # Configuración de gráfico
     plt.figure(figsize=(15, 10))
@@ -684,9 +716,6 @@ def perform_tsne(embedding_model, labels, closest_words, figure_path, review_typ
         legend="full",
         style=labels[:n_samples],
     )
-
-    # Crear carpeta si no existe
-    os.makedirs(figure_path, exist_ok=True)
 
     # Anotar cada punto
     for label, x, y in zip(words, X_embedded[:, 0], X_embedded[:, 1]):
