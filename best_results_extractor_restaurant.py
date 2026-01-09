@@ -42,10 +42,12 @@ if __name__ == "__main__":
     os.makedirs(filtered_results_path, exist_ok=True)
     all_results = {}
     # for city in ["moscow", "madrid", "istanbul", "barcelona"]
+    for restaurant_id in ["691623", "2419130", "7122712"]:
+        for city in ["moscow"]:
     # for restaurant_id in ["1010030", "1644684", "1749881"]:
     #     for city in ["istanbul"]:
-    for restaurant_id in ["1082035", "3179219", "11906544"]:
-        for city in ["barcelona"]:
+    # for restaurant_id in ["1082035", "3179219", "11906544"]:
+    #     for city in ["barcelona"]:
             logger.info(f"Checking city: {city.title()}")
             all_results[city] = {}
             for class_type in ["positive", "negative"]:
@@ -115,17 +117,25 @@ if __name__ == "__main__":
             for class_type in ["positive", "negative"]:
                 for metric, values in best_results[city][class_type].items():
                     figure_src = Path(os.path.join(base_path, city, restaurant_id, values["config"], "results", "figures", f"{metric}_{class_type}_{values['k']}.png"))
+                    plot_obj_src = Path(os.path.join(base_path, city, restaurant_id, values["config"], "results", "figures", "plot_pkl_obj", f"tsne_inputs_{metric}_{class_type}_{values['k']}.pkl"))
                     topics_src = Path(os.path.join(base_path, city, restaurant_id, values["config"], "results", "topics", f"{metric}_{class_type}"))
 
                     dest_img = Path(os.path.join(filtered_results_path, city, restaurant_id, "results", "figures"))
                     dest_topics = Path(os.path.join(filtered_results_path, city, restaurant_id, "results", "topics"))
+                    dest_plot_obj = Path(os.path.join(filtered_results_path, city, restaurant_id, "results", "plot_pkl_obj"))
+
                     os.makedirs(dest_img, exist_ok=True)
+                    os.makedirs(dest_plot_obj, exist_ok=True)
 
                     # Copy figure file
                     if figure_src.exists():
                         shutil.copy(figure_src, dest_img)
                     else:
                         print(f"Figure not found: {figure_src}")
+                    if plot_obj_src.exists():
+                        shutil.copy(plot_obj_src, dest_plot_obj)
+                    else:
+                        print(f"PKl obj not found: {figure_src}")
 
                     # Copy topics directory
                     dest_topics = os.path.join(dest_topics, f"{metric}_{class_type}")
