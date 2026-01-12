@@ -1,5 +1,7 @@
 from itertools import chain
 
+from joblib import Parallel, delayed
+
 import utils
 from config import *
 from utils import logger
@@ -18,8 +20,6 @@ def main_analysis_by_city(data, city):
 def main_analysis_by_restaurant(data, city):
     most_commented_restaurants = data['itemId'].value_counts()
     for restaurant_id in most_commented_restaurants.head(top_n_restaurants).index:
-        if str(restaurant_id) == "3179219":
-            continue
         logger.info(f"Doing topic clustering for city: {city} and restaurant id: {restaurant_id}")
         topic_clustering(data, city, restaurant_id)
 
@@ -82,6 +82,59 @@ def get_corpus(data, threshold, restaurant_id=None):
     return corpus_positive, corpus_nouns_positive, corpus_negative, corpus_nouns_negative
 
 
+def process_single_gmm_config(params, embedding_model, nouns, gmm_path, n_clusters_range,
+                               top_n_nearest_points, city_path, class_review, restaurant_id,
+                               top_n_restaurants, city, idx, total_params):
+    """Process a single GMM configuration"""
+    logger.info(f"{idx+1}/{total_params} Training GMM model with params: {params}")
+    img_name = "_".join([f"{k}-{v}" for k, v in params.items()]).replace(".", "_").replace("covariance", "cov")
+
+    if restaurant_id is not None:
+        city_path_config = os.path.join(f"results_by_restaurant_top{top_n_nearest_points}", str(city), str(restaurant_id))
+        embedding_model_path = os.path.join(city_path_config, img_name, w2v_models_path_by_city, embedding_model_name)
+        gmm_path_config = os.path.join(city_path_config, img_name, gmm_models_path_by_city, class_review)
+        topics_path_images = os.path.join(city_path_config, img_name, figures_path_by_city)
+        topics_path_nouns = os.path.join(city_path_config, img_name, topics_clusters_path_by_city)
+        cluster_metrics_path = os.path.join(city_path_config, img_name, "metrics", class_review)
+    else:
+        city_path_config = os.path.join(f"results_by_city_top{top_n_nearest_points}", str(city))
+        embedding_model_path = os.path.join(city_path_config, img_name, w2v_models_path_by_city, embedding_model_name)
+        gmm_path_config = os.path.join(city_path_config, img_name, gmm_models_path_by_city, class_review)
+        topics_path_images = os.path.join(city_path_config, img_name, figures_path_by_city)
+        topics_path_nouns = os.path.join(city_path_config, img_name, topics_clusters_path_by_city)
+        cluster_metrics_path = os.path.join(city_path_config, img_name, "metrics", class_review)
+
+    # Train or load GMM model
+    trained_models, cluster_metrics, closest_words = utils.train_gmm_model(
+        embedding_model, nouns, gmm_path_config, n_clusters_range=n_clusters_range, top_n_points=top_n_nearest_points,
+        covariance_type=params["covariance_type"], reg_covar=params["reg_covar"],
+        max_iter=params["max_iter"], n_init=params["n_init"]
+    )
+
+    utils.save_cluster_metrics(cluster_metrics, file_path=os.path.join(cluster_metrics_path, f"all_metrics"))
+    for k, v in cluster_metrics.items():
+        if "scci" in v and isinstance(v["scci"], dict):
+            v["scci"] = v["scci"]["scci"]
+    best_clusters = utils.select_best_clusters(cluster_metrics)
+    utils.save_cluster_metrics(best_clusters, file_path=os.path.join(cluster_metrics_path, f"best_metrics"))
+
+    for metric, best_gmm_model_metric in best_clusters.items():
+        if best_gmm_model_metric is not None:
+            logger.info(f"Best cluster for {metric}: {best_gmm_model_metric}")
+            best_gmm_model = list(best_gmm_model_metric.keys())[0]
+            probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, embedding_model, closest_words[best_gmm_model])
+
+            logger.info(f"Performing TSNE")
+            utils.perform_tsne(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
+
+            logger.info(f"Saving topic clusters results")
+            utils.save_topic_clusters_results(cluster_words, topics_path_nouns, class_review, metric)
+
+            logger.info(f"Closest words {closest_words[best_gmm_model]}")
+            logger.info(f"Cluster words: {cluster_words}")
+
+    return img_name, best_clusters
+
 def topic_clustering(data, city, restaurant_id=None):
     corpus_positive, corpus_nouns_positive, corpus_negative, corpus_nouns_negative = get_corpus(data, rating_threshold, restaurant_id)
 
@@ -108,55 +161,22 @@ def topic_clustering(data, city, restaurant_id=None):
         embedding_model = utils.train_or_load_embedding_model(model_name=embedding_model_name)
         nouns = set(corpus_nouns_positive) if class_review == "positive" else set(corpus_nouns_negative)
         # params_list = params_list[:2]
-        for idx, params in enumerate(params_list):
-            logger.info(f"{idx+1}/{len(params_list)} Training GMM model with params: {params}")
-            img_name = "_".join([f"{k}-{v}" for k, v in params.items()]).replace(".", "_").replace("covariance", "cov")
+        if restaurant_id is not None:
+            city_path = os.path.join(f"results_by_restaurant_top{top_n_nearest_points}", str(city), str(restaurant_id))
+        else:
+            city_path = os.path.join(f"results_by_city_top{top_n_nearest_points}", str(city))
 
-            if restaurant_id is not None:
-                city_path = os.path.join(f"results_by_restaurant_top{top_n_nearest_points}", str(city), str(restaurant_id))
-                embedding_model_path = os.path.join(city_path, img_name, w2v_models_path_by_city, embedding_model_name)
-                gmm_path = os.path.join(city_path, img_name, gmm_models_path_by_city, class_review)
-                topics_path_images = os.path.join(city_path, img_name, figures_path_by_city)
-                topics_path_nouns = os.path.join(city_path, img_name, topics_clusters_path_by_city)
-                cluster_metrics_path = os.path.join(city_path, img_name, "metrics", class_review)
-            else:
-                city_path = os.path.join(f"results_by_city_top{top_n_nearest_points}", str(city))
-                embedding_model_path = os.path.join(city_path, img_name, w2v_models_path_by_city, embedding_model_name)
-                gmm_path = os.path.join(city_path, img_name, gmm_models_path_by_city, class_review)
-                topics_path_images = os.path.join(city_path, img_name, figures_path_by_city)
-                topics_path_nouns = os.path.join(city_path, img_name, topics_clusters_path_by_city)
-                cluster_metrics_path = os.path.join(city_path, img_name, "metrics", class_review)
-
-            # Train or load GMM model
-            trained_models, cluster_metrics, closest_words = utils.train_gmm_model(
-                embedding_model, nouns, gmm_path, n_clusters_range=n_clusters_range, top_n_points=top_n_nearest_points,
-                covariance_type=params["covariance_type"], reg_covar=params["reg_covar"],
-                max_iter=params["max_iter"], n_init=params["n_init"]
-            )
-
-            utils.save_cluster_metrics(cluster_metrics, file_path=os.path.join(cluster_metrics_path, f"all_metrics"))
-            for k, v in cluster_metrics.items():
-                if "scci" in v and isinstance(v["scci"], dict):
-                    v["scci"] = v["scci"]["scci"]
-            best_clusters = utils.select_best_clusters(cluster_metrics)
+        results = Parallel(n_jobs=-1, verbose=10)(
+            delayed(process_single_gmm_config)(
+                params, embedding_model, nouns, None, n_clusters_range,
+                top_n_nearest_points, city_path, class_review, restaurant_id,
+                top_n_restaurants, city, idx, len(params_list)
+            ) for idx, params in enumerate(params_list)
+        )
+        for img_name, best_clusters in results:
             all_clusters_metrics[img_name] = best_clusters
-            utils.save_cluster_metrics(best_clusters, file_path=os.path.join(cluster_metrics_path, f"best_metrics"))
 
-            for metric, best_gmm_model_metric in best_clusters.items():
-                if best_gmm_model_metric is not None:
-                    logger.info(f"Best cluster for {metric}: {best_gmm_model_metric}")
-                    best_gmm_model = list(best_gmm_model_metric.keys())[0]
-                    probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, embedding_model, closest_words[best_gmm_model])
-
-                    logger.info(f"Performing TSNE")
-                    utils.perform_tsne(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
-
-                    logger.info(f"Saving topic clusters results")
-                    utils.save_topic_clusters_results(cluster_words, topics_path_nouns, class_review, metric)
-
-                    logger.info(f"Closest words {closest_words[best_gmm_model]}")
-                    logger.info(f"Cluster words: {cluster_words}")
-
+        # Rest of the code for selecting best per metric remains the same
         best_per_metric = {}
         for metric in metric_directions:
             best_config = None
@@ -186,7 +206,7 @@ def topic_clustering(data, city, restaurant_id=None):
 
 if __name__ == "__main__":
     # ["gijon", "moscow", "madrid", "istanbul", "barcelona"]
-    for city in ["moscow"]:
+    for city in ["barcelona"]:
         logger.info(f"Checking city: {city.title()}")
 
         logger.info(f"Creating reviews data")

@@ -11,3 +11,5 @@ venv
 /topic_extraction/data/
 /results_by_city_top20/
 /results_by_restaurant_top20/
+/results_by_city_paper_top20/
+/results_by_restaurant_paper_top20/

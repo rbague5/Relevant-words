@@ -42,12 +42,14 @@ if __name__ == "__main__":
     os.makedirs(filtered_results_path, exist_ok=True)
     all_results = {}
     # for city in ["moscow", "madrid", "istanbul", "barcelona"]
-    for restaurant_id in ["691623", "2419130", "7122712"]:
-        for city in ["moscow"]:
+    # for restaurant_id in ["691623", "2419130", "7122712"]:
+    #     for city in ["moscow"]:
+    # for restaurant_id in ["1027419", "6367286", "17340009"]:
+    #     for city in ["madrid"]:
     # for restaurant_id in ["1010030", "1644684", "1749881"]:
     #     for city in ["istanbul"]:
-    # for restaurant_id in ["1082035", "3179219", "11906544"]:
-    #     for city in ["barcelona"]:
+    for restaurant_id in ["1082035", "3179219", "11906544"]:
+        for city in ["barcelona"]:
             logger.info(f"Checking city: {city.title()}")
             all_results[city] = {}
             for class_type in ["positive", "negative"]:
