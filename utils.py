@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
+import umap
 from matplotlib import pyplot as plt
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -723,6 +724,96 @@ def perform_tsne(embedding_model, labels, closest_words, figure_path, review_typ
 
     fig_path = figure_path + metric + "_" + review_type + "_" + f"{str(len(set(labels)))}.png"
     # Guardar figura
+    plt.tight_layout()
+    plt.savefig(fig_path)
+    plt.close()
+
+def perform_umap(
+    embedding_model, labels, closest_words, figure_path, review_type, metric, n_neighbors=15, min_dist=0.1, img_name: str = ""
+):
+    # Soporte para modelos con o sin `.wv`
+    if hasattr(embedding_model, 'wv'):
+        keyed_vectors = embedding_model.wv
+    elif hasattr(embedding_model, 'get_word_embedding'):
+        class ContextualWrapper:
+            def __init__(self, model):
+                self.model = model
+
+            def __getitem__(self, word):
+                return self.model.get_word_embedding(str(word))
+
+            def __contains__(self, word):
+                try:
+                    _ = self.model.get_word_embedding(str(word))
+                    return True
+                except:
+                    return False
+        keyed_vectors = ContextualWrapper(embedding_model)
+    else:
+        keyed_vectors = embedding_model
+
+    # Flatten closest_words
+    try:
+        flat_words = np.array(closest_words).flatten().tolist()
+    except Exception:
+        flat_words = [w for sublist in closest_words for w in (sublist if isinstance(sublist, list) else [sublist])]
+
+    # Filter words present in the embedding
+    filtered = [(word, keyed_vectors[word]) for word in flat_words if word in keyed_vectors]
+    if not filtered:
+        raise ValueError("No valid words found in the model vocabulary.")
+
+    words, embeddings = zip(*filtered)
+    embedding_corpus = np.array(embeddings)
+
+    n_samples = len(embedding_corpus)
+    random_state = 42
+
+    # UMAP
+    reducer = umap.UMAP(
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        n_components=2,
+        random_state=random_state,
+    )
+    X_embedded = reducer.fit_transform(embedding_corpus)
+
+    umap_data = {
+        "embedding_corpus": embedding_corpus,
+        "X_embedded": X_embedded,
+        "words": words,
+        "labels": labels,
+        "n_samples": n_samples,
+        "n_neighbors": n_neighbors,
+        "min_dist": min_dist,
+        "random_state": random_state,
+    }
+
+    # Crear carpeta si no existe
+    os.makedirs(figure_path, exist_ok=True)
+    save_path = figure_path + "plot_pkl_obj/" + f"umap_inputs_{metric}_{review_type}_{str(len(set(labels)))}.pkl"
+    os.makedirs(os.path.join(figure_path, "plot_pkl_obj"), exist_ok=True)
+    with open(save_path, "wb") as f:
+        pickle.dump(umap_data, f)
+
+    # Configuración de gráfico
+    plt.figure(figsize=(15, 10))
+    palette = sns.color_palette("bright", max(len(set(labels)), 10))
+
+    sns.scatterplot(
+        x=X_embedded[:, 0],
+        y=X_embedded[:, 1],
+        hue=labels[:n_samples],
+        palette=palette[:len(set(labels))],
+        legend="full",
+        style=labels[:n_samples],
+    )
+
+    # Anotar cada punto
+    for label, x, y in zip(words, X_embedded[:, 0], X_embedded[:, 1]):
+        plt.annotate(label, xy=(x, y), xytext=(0, 0), fontsize=15, textcoords="offset points")
+
+    fig_path = figure_path + metric + "_" + review_type + "_" + f"{str(len(set(labels)))}.png"
     plt.tight_layout()
     plt.savefig(fig_path)
     plt.close()

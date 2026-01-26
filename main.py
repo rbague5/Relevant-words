@@ -124,8 +124,10 @@ def process_single_gmm_config(params, embedding_model, nouns, gmm_path, n_cluste
             best_gmm_model = list(best_gmm_model_metric.keys())[0]
             probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, embedding_model, closest_words[best_gmm_model])
 
-            logger.info(f"Performing TSNE")
-            utils.perform_tsne(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
+            logger.info(f"Performing t-sne")
+            # utils.perform_tsne(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
+            logger.info(f"Performing UMAP")
+            utils.perform_umap(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
 
             logger.info(f"Saving topic clusters results")
             utils.save_topic_clusters_results(cluster_words, topics_path_nouns, class_review, metric)
@@ -206,7 +208,7 @@ def topic_clustering(data, city, restaurant_id=None):
 
 if __name__ == "__main__":
     # ["gijon", "moscow", "madrid", "istanbul", "barcelona"]
-    for city in ["barcelona"]:
+    for city in ["istanbul", "barcelona"]:
         logger.info(f"Checking city: {city.title()}")
 
         logger.info(f"Creating reviews data")
@@ -221,7 +223,7 @@ if __name__ == "__main__":
         logger.info(f"N. of rating: {data['rating'].value_counts().sort_index(ascending=False)}")
         logger.info(f"Review dates between: {data['date'].min()} and {data['date'].max()}")
 
-        # main_analysis_by_city(data, city)
+        main_analysis_by_city(data, city)
         main_analysis_by_restaurant(data, city)
         # main_analysis_by_restaurant_tf_itf(data, city)
 

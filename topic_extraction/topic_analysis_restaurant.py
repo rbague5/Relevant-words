@@ -5,6 +5,7 @@ import os
 import re
 
 from config import top_n_nearest_points
+from generate_paper_figures import generate_plots
 from utils import logger
 
 
@@ -92,6 +93,44 @@ def load_jsonl2(path: str, key: str = "responses"):
                         topics_info[key] = None
                 topics.append(topics_info)
     return topics
+
+
+def generate_imgs_latex(city: str, restaurant_id: str, metrics: list):
+    metrics[0] = metrics[0].replace("_", "-")
+    metrics[1] = metrics[1].replace("_", "-")
+    latex_code = ["", ""]
+    latex_code.append(r"\begin{figure}[htbp]")
+    latex_code.append(r"    \centering")
+    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"        \centering")
+    latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_restaurant/{city.lower()}/{restaurant_id}/{metrics[0].lower().replace('-', '_')}_negative.png}}")
+    latex_code.append(rf"        \caption{{{metrics[0].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{-}}\right)$ {city.title()}}}")
+    latex_code.append(r"    \end{subfigure}")
+    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"        \centering")
+    latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_restaurant/{city.lower()}/{restaurant_id}/{metrics[0].lower().replace('-', '_')}_positive.png}}")
+    latex_code.append(rf"        \caption{{{metrics[0].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{+}}\right)$ {city.title()}}}")
+    latex_code.append(r"    \end{subfigure}")
+    latex_code.append(rf"    \caption{{Top clusters in {city.title()} based on {metrics[0].title()}.}}")
+    latex_code.append(rf"    \label{{fig:metrics_{city.lower()}_{metrics[0].lower().replace('-', '_')}}}")
+    latex_code.append(r"\end{figure}")
+    latex_code.append(r"\begin{figure}[htbp]")
+    latex_code.append(r"    \centering")
+    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"        \centering")
+    latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_restaurant/{city.lower()}/{restaurant_id}/{metrics[1].lower().replace('-', '_')}_negative.png}}")
+    latex_code.append(rf"        \caption{{{metrics[1].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{-}}\right)$ {city.title()}}}")
+    latex_code.append(r"    \end{subfigure}")
+    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"        \centering")
+    latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_restaurant/{city.lower()}/{restaurant_id}/{metrics[1].lower().replace('-', '_')}_positive.png}}")
+    latex_code.append(rf"        \caption{{{metrics[1].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{+}}\right)$ {city.title()}}}")
+    latex_code.append(r"    \end{subfigure}")
+    latex_code.append(rf"    \caption{{Top clusters in {city.title()} based on {metrics[1].title()}.}}")
+    latex_code.append(rf"    \label{{fig:metrics_{city.lower()}_{metrics[1].lower().replace('-', '_')}}}")
+    latex_code.append(r"\end{figure}")
+
+    return latex_code
 
 data = []
 
@@ -186,9 +225,9 @@ for restaurant_id in ["691623", "2419130", "7122712"]:
         latex = []
         latex.append(r"\begin{table}[h!]")
         latex.append(r"\centering")
-        latex.append(r"\begin{tabular}{|l|c|c|c|c|}")
+        latex.append(r"\begin{tabular}{|l|c|c|c|c|c|}")
         latex.append(r"\hline")
-        latex.append(r"Metric & \# Clusters & \# Non assigned topics & \# Diff. Topics & CQS \\")
+        latex.append(r"Metric & \# Clusters & \# Non assigned topics & \# Diff. Topics & CQS & Mean \\")
         latex.append(r"\hline")
 
         total_clusters = 0
@@ -225,7 +264,7 @@ for restaurant_id in ["691623", "2419130", "7122712"]:
                 f"{non_assigned} "
                 f"({round((non_assigned / clusters) * 100, 2)}\\%) & "
                 f"{diff_topics} & "
-                f"{round(cqs, 2)} \\\\"
+                f"{round(cqs, 2)} & \\\\"
             )
             cqs_values.append(cqs)
 
@@ -236,22 +275,24 @@ for restaurant_id in ["691623", "2419130", "7122712"]:
 
             h += 1
             if h == 2:
+                mean_cqs_metric = round((sum(cqs_values) / len(cqs_values)), 2)
+                latex[-2] = latex[-2].replace(r"\\", "") + r"\multirow{2}{*}[-2pt]{" + str(mean_cqs_metric) + r"} \\"
                 latex.append(r"\hline")
-                latex.append(rf"Mean &  &  &  & {round((sum(cqs_values) / len(cqs_values)), 2)} \\")
-                latex.append(r"\hline")
-                latex.append(r"\hline")
+                # latex.append(rf"Mean &  &  &  & {round((sum(cqs_values) / len(cqs_values)), 2)} \\")
+                # latex.append(r"\hline")
+                # latex.append(r"\hline")
                 means_sqs_metrics[metric.replace("_negative", "").replace("_positive", "")] = round(
                     (sum(cqs_values) / len(cqs_values)), 2)
                 h = 0
                 cqs_values = []
 
+        percent_non_asigned = round((total_non_assigned / total_clusters) * 100, 2)
         latex.append(
             f"Total & "
             f"{total_clusters} & "
             f"{total_non_assigned} "
-            f"({round((total_non_assigned / total_clusters) * 100, 2)}\\%) & "
-            f"{total_diff_topics} & "
-            f"N/A \\\\"
+            f"({format(percent_non_asigned)}\\%) & "
+            f"{total_diff_topics} & N/A & N/A \\\\"
         )
         latex.append(r"\hline")
         latex.append(r"\end{tabular}")
@@ -267,47 +308,51 @@ for restaurant_id in ["691623", "2419130", "7122712"]:
         clean_formatter = logging.Formatter("%(message)s")
         logger.handlers[0].setFormatter(clean_formatter)
 
-        logger.info(f"The results of the topics of the clusters for the best metrics of the restaurant {restaurant_id} in {city.title()} are the following:\n")
-        for metric, value in metric_cluster_results.items():
-            if metric.replace("_negative", "").replace("_positive", "") not in top2_keys:
-                continue
-            input_path_full_last_results = os.path.join("data_restaurants", f"results_top_{top_n_nearest_points}", city, restaurant_id, f"{metric}.json")
-            with open(input_path_full_last_results, "r", encoding="utf-8") as f:
-                full_last_results = json.load(f)
-            logger.info(f"\n\\textbf{{{metric.replace('_',' ').title()}}}\n")
-
-            logger.info("\\begin{itemize}")
-            no_topics_clusters = []
-            for cluster in sorted(value, key=lambda x: x['id']):
-                cluster.pop('text', None)
-                cluster_id = cluster.get('id')
-                for cluster_last_result in full_last_results:
-                    if cluster_last_result.get('id') == cluster_id:
-                        explanation = cluster_last_result.get('explanation')
-                        break
-                responses = cluster.get('responses')
-                subtopics = list(set(list(cluster.get('subtopics', []))))
-                if responses:
-                    topics = ", ".join([r['topic'] + ": " + r['description'] for r in responses if 'topic' in r])
-                    if subtopics:
-                        logger.info(f"    \\item \\textbf{{Cluster {cluster_id}}}: {topics}")
-                        logger.info("    \\begin{itemize}")
-                        logger.info(f"        \\item \\textbf{{Subtopics:}}")
-                        for subt in subtopics:
-                            logger.info(f"        \\item {subt}")
-                        logger.info(f"        \\item \\textbf{{Explanation:}} {explanation.strip()}")
-                        logger.info("    \\end{itemize}")
-                    else:
-                        logger.info(f"    \\item \\textbf{{Cluster {cluster_id}}}: {topics}")
-                else:
-                    no_topics_clusters.append(str(cluster_id))
-            if len(no_topics_clusters) == 1:
-                logger.info(f"    \\item \\textbf{{Cluster {', '.join(no_topics_clusters)}}}: Have no relevant topics.")
-            else:
-                logger.info(
-                    f"    \\item \\textbf{{Clusters {', '.join(no_topics_clusters)}}}: Have no relevant topics.")
-            logger.info("\\end{itemize}")
+        # logger.info(f"The results of the topics of the clusters for the best metrics of the restaurant {restaurant_id} in {city.title()} are the following:\n")
+        # for metric, value in metric_cluster_results.items():
+        #     if metric.replace("_negative", "").replace("_positive", "") not in top2_keys:
+        #         continue
+        #     input_path_full_last_results = os.path.join("data_restaurants", f"results_top_{top_n_nearest_points}", city, restaurant_id, f"{metric}.json")
+        #     with open(input_path_full_last_results, "r", encoding="utf-8") as f:
+        #         full_last_results = json.load(f)
+        #     logger.info(f"\n\\textbf{{{metric.replace('_',' ').title()}}}\n")
+        #
+        #     logger.info("\\begin{itemize}")
+        #     no_topics_clusters = []
+        #     for cluster in sorted(value, key=lambda x: x['id']):
+        #         cluster.pop('text', None)
+        #         cluster_id = cluster.get('id')
+        #         for cluster_last_result in full_last_results:
+        #             if cluster_last_result.get('id') == cluster_id:
+        #                 explanation = cluster_last_result.get('explanation')
+        #                 break
+        #         responses = cluster.get('responses')
+        #         subtopics = list(set(list(cluster.get('subtopics', []))))
+        #         if responses:
+        #             topics = ", ".join([r['topic'] + ": " + r['description'] for r in responses if 'topic' in r])
+        #             if subtopics:
+        #                 logger.info(f"    \\item \\textbf{{Cluster {cluster_id}}}: {topics}")
+        #                 logger.info("    \\begin{itemize}")
+        #                 logger.info(f"        \\item \\textbf{{Subtopics:}}")
+        #                 for subt in subtopics:
+        #                     logger.info(f"        \\item {subt}")
+        #                 logger.info(f"        \\item \\textbf{{Explanation:}} {explanation.strip()}")
+        #                 logger.info("    \\end{itemize}")
+        #             else:
+        #                 logger.info(f"    \\item \\textbf{{Cluster {cluster_id}}}: {topics}")
+        #         else:
+        #             no_topics_clusters.append(str(cluster_id))
+        #     if len(no_topics_clusters) == 1:
+        #         logger.info(f"    \\item \\textbf{{Cluster {', '.join(no_topics_clusters)}}}: Have no relevant topics.")
+        #     else:
+        #         logger.info(
+        #             f"    \\item \\textbf{{Clusters {', '.join(no_topics_clusters)}}}: Have no relevant topics.")
+        #     logger.info("\\end{itemize}")
+        logger.info("\n".join(generate_imgs_latex(city, restaurant_id, top2_keys)))
+        generate_plots(city, top2_keys[0], topics=summary, restaurant_id=restaurant_id, algorithm="umap")
+        generate_plots(city, top2_keys[1], topics=summary, restaurant_id=restaurant_id, algorithm="umap")
         logger.handlers[0].setFormatter(original_formatter)
+
         # logger.info(f"\n--- SUMMARY STATISTICS {top_n_nearest_points} words ---")
         # logger.info(f"Total clusters: {total_clusters}")
         # logger.info(f"Total non-assigned: {total_non_assigned}")

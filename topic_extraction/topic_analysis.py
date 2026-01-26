@@ -5,6 +5,7 @@ import os
 import re
 
 from config import top_n_nearest_points
+from generate_paper_figures import generate_plots
 from utils import logger
 
 
@@ -93,7 +94,42 @@ def load_jsonl2(path: str, key: str = "responses"):
                 topics.append(topics_info)
     return topics
 
+def generate_imgs_latex(city: str, metrics: list):
+    metrics[0] = metrics[0].replace("_", "-")
+    metrics[1] = metrics[1].replace("_", "-")
+    latex_code = ["", ""]
+    latex_code.append(r"\begin{figure}[htbp]")
+    latex_code.append(r"    \centering")
+    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"        \centering")
+    latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_city/{city.lower()}/{metrics[0].lower().replace('-', '_')}_negative.png}}")
+    latex_code.append(rf"        \caption{{{metrics[0].title()} clusters $C^{{-}}$ {city.title()}}}")
+    latex_code.append(r"    \end{subfigure}")
+    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"        \centering")
+    latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_city/{city.lower()}/{metrics[0].lower().replace('-', '_')}_positive.png}}")
+    latex_code.append(rf"        \caption{{{metrics[0].title()} clusters $C^{{+}}$ {city.title()}}}")
+    latex_code.append(r"    \end{subfigure}")
+    latex_code.append(rf"    \caption{{Top clusters in {city.title()} based on {metrics[0].title()}.}}")
+    latex_code.append(rf"    \label{{fig:metrics_{city.lower()}_{metrics[0].lower().replace('-', '_')}}}")
+    latex_code.append(r"\end{figure}")
+    latex_code.append(r"\begin{figure}[htbp]")
+    latex_code.append(r"    \centering")
+    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"        \centering")
+    latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_city/{city.lower()}/{metrics[1].lower().replace('-', '_')}_negative.png}}")
+    latex_code.append(rf"        \caption{{{metrics[1].title()} clusters $C^{{-}}$ {city.title()}}}")
+    latex_code.append(r"    \end{subfigure}")
+    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"        \centering")
+    latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_city/{city.lower()}/{metrics[1].lower().replace('-', '_')}_positive.png}}")
+    latex_code.append(rf"        \caption{{{metrics[1].title()} clusters $C^{{+}}$ {city.title()}}}")
+    latex_code.append(r"    \end{subfigure}")
+    latex_code.append(rf"    \caption{{Top clusters in {city.title()} based on {metrics[1].title()}.}}")
+    latex_code.append(rf"    \label{{fig:metrics_{city.lower()}_{metrics[1].lower().replace('-', '_')}}}")
+    latex_code.append(r"\end{figure}")
 
+    return latex_code
 
 
 data = []
@@ -140,17 +176,18 @@ for city in ["moscow"]:
                             if topic_1["text"] == doc:
                                 doc_subtopics[current_doc] = doc
                     if len(doc_subtopics) > 0:
-                        subtopics.extend([t["topic"] for t in topic_2["topics"] if t["level"] != 1])
-                    if len(topic_2["topics"]) == 1:
-                        subtopics.extend([topic_2["topics"][0]["topic"]])
-
-                    for subtopic in topics:
-                        if subtopic["level"] != 1 and subtopic["text"] == topic_1["text"]:
-                            value = f"{subtopic['topic']}: {subtopic['description']}"
-                            if "subtopics" not in topic_1:
-                                topic_1["subtopics"] = []
-                            topic_1["subtopics"].append(value)
-
+                        if topic_2["topics"] is not None:
+                            subtopics.extend([t["topic"] for t in topic_2["topics"] if t["level"] != 1])
+                    if topic_2["topics"] is not None:
+                        if len(topic_2["topics"]) == 1:
+                            subtopics.extend([topic_2["topics"][0]["topic"]])
+                    if topic_2["topics"] is not None:
+                        for subtopic in topics:
+                            if subtopic["level"] != 1 and subtopic["text"] == topic_1["text"]:
+                                value = f"{subtopic['topic']}: {subtopic['description']}"
+                                if "subtopics" not in topic_1:
+                                    topic_1["subtopics"] = []
+                                topic_1["subtopics"].append(value)
 
                 final_result.append(topic_1)
         # c = Counter(topics)
@@ -166,7 +203,7 @@ for city in ["moscow"]:
         }
     pretty_json = json.dumps(summary, indent=4)
 
-    logger.info(pretty_json)
+    # logger.info(pretty_json)
     metrics_mapping = {
         "inter_distance_negative": "Inter-distance $C^{-}$",
         "inter_distance_positive": "Inter-distance $C^{+}$",
@@ -183,9 +220,9 @@ for city in ["moscow"]:
     latex = []
     latex.append(r"\begin{table}[h!]")
     latex.append(r"\centering")
-    latex.append(r"\begin{tabular}{|l|c|c|c|c|}")
+    latex.append(r"\begin{tabular}{|l|c|c|c|c|c|}")
     latex.append(r"\hline")
-    latex.append(r"Metric & \# Clusters & \# Non assigned topics & \# Diff. Topics & CQS \\")
+    latex.append(r"Metric & \# Clusters & \# Non assigned topics & \# Diff. Topics & CQS & Mean \\")
     latex.append(r"\hline")
 
     total_clusters = 0
@@ -222,7 +259,7 @@ for city in ["moscow"]:
             f"{non_assigned} "
             f"({round((non_assigned / clusters) * 100, 2)}\\%) & "
             f"{diff_topics} & "
-            f"{round(cqs, 2)} \\\\"
+            f"{round(cqs, 2)} & \\\\"
         )
         cqs_values.append(cqs)
 
@@ -233,21 +270,23 @@ for city in ["moscow"]:
 
         h += 1
         if h == 2:
+            mean_cqs_metric = round((sum(cqs_values) / len(cqs_values)), 2)
+            latex[-2] = latex[-2].replace(r"\\", "") + r"\multirow{2}{*}[-2pt]{" + str(mean_cqs_metric) + r"} \\"
             latex.append(r"\hline")
-            latex.append(rf"Mean &  &  &  & {round((sum(cqs_values) / len(cqs_values)), 2)} \\")
-            latex.append(r"\hline")
-            latex.append(r"\hline")
+            # latex.append(rf"Mean &  &  &  & {round((sum(cqs_values) / len(cqs_values)), 2)} \\")
+            # latex.append(r"\hline")
+            # latex.append(r"\hline")
             means_sqs_metrics[metric.replace("_negative", "").replace("_positive", "")] = round((sum(cqs_values) / len(cqs_values)), 2)
             h = 0
             cqs_values = []
 
+    percent_non_asigned = round((total_non_assigned/total_clusters)*100, 2)
     latex.append(
             f"Total & "
             f"{total_clusters} & "
             f"{total_non_assigned} "
-            f"({round((total_non_assigned/total_clusters)*100, 2)}\\%) & "
-            f"{total_diff_topics} & "
-            f"N/A \\\\"
+            f"({format(percent_non_asigned)}\\%) & "
+            f"{total_diff_topics} & N/A & N/A \\\\"
         )
     latex.append(r"\hline")
     latex.append(r"\end{tabular}")
@@ -256,52 +295,58 @@ for city in ["moscow"]:
     latex.append(r"\end{table}")
     logger.info("\n".join(latex))
     top2_keys = [k for k, v in sorted(means_sqs_metrics.items(), key=lambda x: x[1], reverse=True)[:2]]
+
     # ---- Save original formatter ----
     original_formatter = logger.handlers[0].formatter
 
     # ---- Temporary formatter (only message, no date, no level) ----
     clean_formatter = logging.Formatter("%(message)s")
     logger.handlers[0].setFormatter(clean_formatter)
+    logger.info("\n".join(generate_imgs_latex(city, top2_keys)))
 
-    logger.info(f"The results of the topics of the clusters for the best metrics of {city.title()} are the following:\n")
-    for metric, value in metric_cluster_results.items():
-        if metric.replace("_negative", "").replace("_positive", "") not in top2_keys:
-            continue
-        input_path_full_last_results = os.path.join("data_cities", f"results_top_{top_n_nearest_points}", city, f"{metric}.json")
-        with open(input_path_full_last_results, "r", encoding="utf-8") as f:
-            full_last_results = json.load(f)
-        logger.info(f"\n\\textbf{{{metric.replace('_',' ').title()}}}\n")
+    # logger.info(f"The results of the topics of the clusters for the best metrics of {city.title()} are the following:\n")
 
-        logger.info("\\begin{itemize}")
-        no_topics_clusters = []
-        for cluster in sorted(value, key=lambda x: x['id']):
-            cluster.pop('text', None)
-            cluster_id = cluster.get('id')
-            for cluster_last_result in full_last_results:
-                if cluster_last_result.get('id') == cluster_id:
-                    explanation = cluster_last_result.get('explanation')
-                    break
-            responses = cluster.get('responses')
-            subtopics = list(set(list(cluster.get('subtopics', []))))
-            if responses:
-                topics = ", ".join([r['topic'] + ": " + r['description'] for r in responses if 'topic' in r])
-                if subtopics:
-                    logger.info(f"    \\item \\textbf{{Cluster {cluster_id}}}: {topics}")
-                    logger.info("    \\begin{itemize}")
-                    logger.info(f"        \\item \\textbf{{Subtopics:}}")
-                    for subt in subtopics:
-                        logger.info(f"        \\item {subt}")
-                    logger.info(f"        \\item \\textbf{{Explanation:}} {explanation.strip()}")
-                    logger.info("    \\end{itemize}")
-                else:
-                    logger.info(f"    \\item \\textbf{{Cluster {cluster_id}}}: {topics}")
-            else:
-                no_topics_clusters.append(str(cluster_id))
-        if len(no_topics_clusters) == 1:
-            logger.info(f"    \\item \\textbf{{Cluster {', '.join(no_topics_clusters)}}}: Have no relevant topics.")
-        else:
-            logger.info(f"    \\item \\textbf{{Clusters {', '.join(no_topics_clusters)}}}: Have no relevant topics.")
-        logger.info("\\end{itemize}")
+    # for metric, value in metric_cluster_results.items():
+    #     if metric.replace("_negative", "").replace("_positive", "") not in top2_keys:
+    #         continue
+    #     input_path_full_last_results = os.path.join("data_cities", f"results_top_{top_n_nearest_points}", city, f"{metric}.json")
+    #     with open(input_path_full_last_results, "r", encoding="utf-8") as f:
+    #         full_last_results = json.load(f)
+    #     # logger.info(f"\n\\textbf{{{metric.replace('_',' ').title()}}}\n")
+    #
+    #     # logger.info("\\begin{itemize}")
+    #     no_topics_clusters = []
+    #     for cluster in sorted(value, key=lambda x: x['id']):
+    #         cluster.pop('text', None)
+    #         cluster_id = cluster.get('id')
+    #         for cluster_last_result in full_last_results:
+    #             if cluster_last_result.get('id') == cluster_id:
+    #                 explanation = cluster_last_result.get('explanation')
+    #                 break
+    #         responses = cluster.get('responses')
+    #         subtopics = list(set(list(cluster.get('subtopics', []))))
+    #         if responses:
+    #             topics = ", ".join([r['topic'] + ": " + r['description'] for r in responses if 'topic' in r])
+    #             if subtopics:
+    #                 # logger.debug(f"    \\item \\textbf{{Cluster {cluster_id}}}: {topics}")
+    #                 # logger.debug("    \\begin{itemize}")
+    #                 # logger.debug(f"        \\item \\textbf{{Subtopics:}}")
+    #                 for subt in subtopics:
+    #                     logger.debug(f"        \\item {subt}")
+    #                 logger.debug(f"        \\item \\textbf{{Explanation:}} {explanation.strip()}")
+    #                 logger.debug("    \\end{itemize}")
+    #             else:
+    #                 logger.debug(f"    \\item \\textbf{{Cluster {cluster_id}}}: {topics}")
+    #         else:
+    #             no_topics_clusters.append(str(cluster_id))
+    #     if len(no_topics_clusters) == 1:
+    #         logger.debug(f"    \\item \\textbf{{Cluster {', '.join(no_topics_clusters)}}}: Have no relevant topics.")
+    #     else:
+    #         logger.debug(f"    \\item \\textbf{{Clusters {', '.join(no_topics_clusters)}}}: Have no relevant topics.")
+    #     logger.debug("\\end{itemize}")
+
+    generate_plots(city, top2_keys[0], topics=summary, algorithm="umap")
+    generate_plots(city, top2_keys[1], topics=summary, algorithm="umap")
     logger.handlers[0].setFormatter(original_formatter)
     logger.info(f"\n--- SUMMARY STATISTICS {top_n_nearest_points} words ---")
     logger.info(f"Total clusters: {total_clusters}")

@@ -13,3 +13,7 @@ venv
 /results_by_restaurant_top20/
 /results_by_city_paper_top20/
 /results_by_restaurant_paper_top20/
+/topic_extraction/data_cities/
+/topic_extraction/data_restaurants/
+/figures_paper_city/
+/figures_paper_restaurant/

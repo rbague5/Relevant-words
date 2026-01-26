@@ -19,10 +19,14 @@ is_generate_subtopics = True
 
 # Your existing code to load clusters
 # for city in ["moscow", "madrid", "istanbul", "barcelona"]
+for restaurant_id in ["691623", "2419130", "7122712"]:
+    for city in ["moscow"]:
+# for restaurant_id in ["1027419", "6367286", "17340009"]:
+#     for city in ["madrid"]:
 # for restaurant_id in ["1010030", "1644684", "1749881"]:
 #     for city in ["istanbul"]:
-for restaurant_id in ["1082035", "3179219", "11906544"]:
-    for city in ["barcelona"]:
+# for restaurant_id in ["1082035", "3179219", "11906544"]:
+#     for city in ["barcelona"]:
         summary = {}
         for metric in ["inter_distance_negative", "inter_distance_positive", "intra_distance_negative", "intra_distance_positive", "scci_negative", "scci_positive", "semantic_coherence_negative", "semantic_coherence_positive", "silhouette_score_negative", "silhouette_score_positive"]:
             base_path = os.path.join("..", f"results_by_restaurant_paper_top{top_n_nearest_points}", city, restaurant_id,"results", "topics", metric)

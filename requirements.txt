@@ -9,3 +9,4 @@ sentence-transformers==4.1.0
 yake==0.4.8
 bertopic==0.17.3
 topicgpt-python==0.2.7
+umap-learn==0.5.4
