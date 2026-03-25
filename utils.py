@@ -176,7 +176,7 @@ def train_or_load_embedding_model(model_name, model_path=None, corpus=None):
     elif model_name.lower() == "sbert":
         model = ContextualEmbeddingWrapper("sentence-transformers/all-roberta-large-v1")
     elif model_name.lower() == "e5":
-        model = ContextualEmbeddingWrapper("intfloat/e5-small-v2")
+        model = ContextualEmbeddingWrapper("intfloat/multilingual-e5-large")
     else:
         raise ValueError(f"Unsupported model name: {model_name}")
 

@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
@@ -163,13 +165,14 @@ def generate_test_clusters(scenarios, output_dir):
         axes[j].axis("off")
 
     plt.tight_layout()
+    os.makedirs(output_dir, exist_ok=True)
     plt.savefig(f"{output_dir}/test_clusters.png", dpi=300, bbox_inches="tight")
 
 def test_scci_scenarios():
     """Test SCCI on various clustering scenarios."""
 
     scenarios = generate_test_scenarios()
-    generate_test_clusters(scenarios, "./scci_evaluation")
+    generate_test_clusters(scenarios, "./scci_evaluation_new")
 
     results = {}
 

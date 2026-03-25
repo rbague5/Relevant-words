@@ -98,15 +98,15 @@ def load_jsonl2(path: str, key: str = "responses"):
 def generate_imgs_latex(city: str, restaurant_id: str, metrics: list):
     metrics[0] = metrics[0].replace("_", "-")
     metrics[1] = metrics[1].replace("_", "-")
-    latex_code = ["", ""]
+    latex_code = [""]
     latex_code.append(r"\begin{figure}[htbp]")
     latex_code.append(r"    \centering")
-    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_restaurant/{city.lower()}/{restaurant_id}/{metrics[0].lower().replace('-', '_')}_negative.png}}")
     latex_code.append(rf"        \caption{{{metrics[0].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{-}}\right)$ {city.title()}}}")
     latex_code.append(r"    \end{subfigure}")
-    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_restaurant/{city.lower()}/{restaurant_id}/{metrics[0].lower().replace('-', '_')}_positive.png}}")
     latex_code.append(rf"        \caption{{{metrics[0].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{+}}\right)$ {city.title()}}}")
@@ -116,12 +116,12 @@ def generate_imgs_latex(city: str, restaurant_id: str, metrics: list):
     latex_code.append(r"\end{figure}")
     latex_code.append(r"\begin{figure}[htbp]")
     latex_code.append(r"    \centering")
-    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_restaurant/{city.lower()}/{restaurant_id}/{metrics[1].lower().replace('-', '_')}_negative.png}}")
     latex_code.append(rf"        \caption{{{metrics[1].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{-}}\right)$ {city.title()}}}")
     latex_code.append(r"    \end{subfigure}")
-    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_restaurant/{city.lower()}/{restaurant_id}/{metrics[1].lower().replace('-', '_')}_positive.png}}")
     latex_code.append(rf"        \caption{{{metrics[1].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{+}}\right)$ {city.title()}}}")
@@ -135,14 +135,14 @@ def generate_imgs_latex(city: str, restaurant_id: str, metrics: list):
 data = []
 
 # ["moscow", "madrid", "istanbul", "barcelona"]
-for restaurant_id in ["691623", "2419130", "7122712"]:
-    for city in ["moscow"]:
+# for restaurant_id in ["691623", "2419130", "7122712"]:
+#     for city in ["moscow"]:
 # for restaurant_id in ["1027419", "6367286", "17340009"]:
 #     for city in ["madrid"]:
 # for restaurant_id in ["1010030", "1644684", "1749881"]:
 #     for city in ["istanbul"]:
-# for restaurant_id in ["1082035", "3179219", "11906544"]:
-#     for city in ["barcelona"]:
+for restaurant_id in ["1082035", "3179219", "11906544"]:
+    for city in ["barcelona"]:
         summary = {}
         for metric in ["inter_distance_negative", "inter_distance_positive", "intra_distance_negative", "intra_distance_positive", "scci_negative", "scci_positive", "semantic_coherence_negative", "semantic_coherence_positive", "silhouette_score_negative", "silhouette_score_positive"]:
             input_path_generation_1 = os.path.join("data_restaurants", "output", f"top_{top_n_nearest_points}", city, restaurant_id, metric, "generation_1.jsonl")
@@ -183,16 +183,19 @@ for restaurant_id in ["691623", "2419130", "7122712"]:
                                 if topic_1["text"] == doc:
                                     doc_subtopics[current_doc] = doc
                         if len(doc_subtopics) > 0:
-                            subtopics.extend([t["topic"] for t in topic_2["topics"] if t["level"] != 1])
-                        if len(topic_2["topics"]) == 1:
-                            subtopics.extend([topic_2["topics"][0]["topic"]])
+                            if topic_2["topics"] is not None:
+                                subtopics.extend([t["topic"] for t in topic_2["topics"] if t["level"] != 1])
+                        if topic_2["topics"] is not None:
+                            if len(topic_2["topics"]) == 1:
+                                subtopics.extend([topic_2["topics"][0]["topic"]])
 
-                        for subtopic in topics:
-                            if subtopic["level"] != 1 and subtopic["text"] == topic_1["text"]:
-                                value = f"{subtopic['topic']}: {subtopic['description']}"
-                                if "subtopics" not in topic_1:
-                                    topic_1["subtopics"] = []
-                                topic_1["subtopics"].append(value)
+                        if topics is not None:
+                            for subtopic in topics:
+                                if subtopic["level"] != 1 and subtopic["text"] == topic_1["text"]:
+                                    value = f"{subtopic['topic']}: {subtopic['description']}"
+                                    if "subtopics" not in topic_1:
+                                        topic_1["subtopics"] = []
+                                    topic_1["subtopics"].append(value)
 
                     final_result.append(topic_1)
             # c = Counter(topics)
@@ -299,7 +302,7 @@ for restaurant_id in ["691623", "2419130", "7122712"]:
         latex.append(r"\caption{Summary of Clustering Metrics of " + city.title() + " " + restaurant_id + "}")
         latex.append(r"\label{tab:summary_metrics_topics_" + city + "_" + restaurant_id + "}")
         latex.append(r"\end{table}")
-        logger.info("\n".join(latex))
+
         top2_keys = [k for k, v in sorted(means_sqs_metrics.items(), key=lambda x: x[1], reverse=True)[:2]]
         # ---- Save original formatter ----
         original_formatter = logger.handlers[0].formatter
@@ -348,6 +351,7 @@ for restaurant_id in ["691623", "2419130", "7122712"]:
         #         logger.info(
         #             f"    \\item \\textbf{{Clusters {', '.join(no_topics_clusters)}}}: Have no relevant topics.")
         #     logger.info("\\end{itemize}")
+        logger.info("\n".join(latex))
         logger.info("\n".join(generate_imgs_latex(city, restaurant_id, top2_keys)))
         generate_plots(city, top2_keys[0], topics=summary, restaurant_id=restaurant_id, algorithm="umap")
         generate_plots(city, top2_keys[1], topics=summary, restaurant_id=restaurant_id, algorithm="umap")

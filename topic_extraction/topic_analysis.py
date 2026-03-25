@@ -97,15 +97,15 @@ def load_jsonl2(path: str, key: str = "responses"):
 def generate_imgs_latex(city: str, metrics: list):
     metrics[0] = metrics[0].replace("_", "-")
     metrics[1] = metrics[1].replace("_", "-")
-    latex_code = ["", ""]
+    latex_code = [""]
     latex_code.append(r"\begin{figure}[htbp]")
     latex_code.append(r"    \centering")
-    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_city/{city.lower()}/{metrics[0].lower().replace('-', '_')}_negative.png}}")
     latex_code.append(rf"        \caption{{{metrics[0].title()} clusters $C^{{-}}$ {city.title()}}}")
     latex_code.append(r"    \end{subfigure}")
-    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_city/{city.lower()}/{metrics[0].lower().replace('-', '_')}_positive.png}}")
     latex_code.append(rf"        \caption{{{metrics[0].title()} clusters $C^{{+}}$ {city.title()}}}")
@@ -115,12 +115,12 @@ def generate_imgs_latex(city: str, metrics: list):
     latex_code.append(r"\end{figure}")
     latex_code.append(r"\begin{figure}[htbp]")
     latex_code.append(r"    \centering")
-    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_city/{city.lower()}/{metrics[1].lower().replace('-', '_')}_negative.png}}")
     latex_code.append(rf"        \caption{{{metrics[1].title()} clusters $C^{{-}}$ {city.title()}}}")
     latex_code.append(r"    \end{subfigure}")
-    latex_code.append(r"    \begin{subfigure}[b]{0.49\textwidth}")
+    latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_per_city/{city.lower()}/{metrics[1].lower().replace('-', '_')}_positive.png}}")
     latex_code.append(rf"        \caption{{{metrics[1].title()} clusters $C^{{+}}$ {city.title()}}}")
@@ -135,7 +135,7 @@ def generate_imgs_latex(city: str, metrics: list):
 data = []
 
 # ["moscow", "madrid", "istanbul", "barcelona"]
-for city in ["moscow"]:
+for city in ["barcelona"]:
     summary = {}
     for metric in ["inter_distance_negative", "inter_distance_positive", "intra_distance_negative", "intra_distance_positive", "scci_negative", "scci_positive", "semantic_coherence_negative", "semantic_coherence_positive", "silhouette_score_negative", "silhouette_score_positive"]:
         input_path_generation_1 = os.path.join("data_cities", "output", f"top_{top_n_nearest_points}", city, metric, "generation_1.jsonl")
@@ -293,7 +293,6 @@ for city in ["moscow"]:
     latex.append(r"\caption{Summary of Clustering Metrics of " + city.title() + "}")
     latex.append(r"\label{tab:summary_metrics_topics_" + city + "}")
     latex.append(r"\end{table}")
-    logger.info("\n".join(latex))
     top2_keys = [k for k, v in sorted(means_sqs_metrics.items(), key=lambda x: x[1], reverse=True)[:2]]
 
     # ---- Save original formatter ----
@@ -301,7 +300,12 @@ for city in ["moscow"]:
 
     # ---- Temporary formatter (only message, no date, no level) ----
     clean_formatter = logging.Formatter("%(message)s")
+
     logger.handlers[0].setFormatter(clean_formatter)
+    logger.info(f"In Table \\ref{{tab:summary_metrics_topics_{city.lower()}}} it can be seen that")
+    logger.info("\n".join(latex))
+
+    logger.info(f"In Figure \\ref{{fig:metrics_{city.lower()}_{top2_keys[0]}}} and Figure \\ref{{fig:metrics_{city.lower()}_{top2_keys[1]}}} can be seen that")
     logger.info("\n".join(generate_imgs_latex(city, top2_keys)))
 
     # logger.info(f"The results of the topics of the clusters for the best metrics of {city.title()} are the following:\n")

@@ -8,6 +8,8 @@ from matplotlib.lines import Line2D
 import seaborn as sns
 import pickle
 import numpy as np
+import textwrap
+
 
 # Load
 def generate_plots(city, metric, topics, restaurant_id=None, algorithm="umap"):
@@ -36,11 +38,28 @@ def generate_plots(city, metric, topics, restaurant_id=None, algorithm="umap"):
         labels = tsne_data["labels"]
         n_samples = tsne_data["n_samples"]
 
-        # Plot
-        fig = plt.figure(figsize=(15, 10))  # FINAL image size
-        ax = fig.add_axes([0.05, 0.08, 0.65, 0.84])  # FIXED plot area
+        # Plot with FIXED dimensions and minimal margins
+        fig = plt.figure(figsize=(15, 10))
+
+        # Remove all automatic spacing
+        fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+        # FIXED plot area with 0.05 margins on all sides
+        # Legend takes fixed space on the right
+        legend_width = 0.10  # Fixed width for legend area
+        margin = 0.05
+
+        # Calculate plot area: left margin + plot width + legend width + right margin = 1.0
+        plot_width = 1.0 - (2 * margin) - legend_width
+        plot_height = 1.0 - (2 * margin)
+
+        ax = fig.add_axes([margin, margin, plot_width, plot_height])  # [left, bottom, width, height]
         ax.set_facecolor("#f5f2f2")
         ax.grid(color='white', linestyle='-', linewidth=1)
+
+        # Set fixed axis limits to ensure consistent plot area
+        ax.set_xlim(X_embedded[:, 0].min() - 1, X_embedded[:, 0].max() + 1)
+        ax.set_ylim(X_embedded[:, 1].min() - 1, X_embedded[:, 1].max() + 1)
 
         # Unique labels
         unique_labels = sorted(set(labels))
@@ -62,18 +81,18 @@ def generate_plots(city, metric, topics, restaurant_id=None, algorithm="umap"):
         n_labels = len(unique_labels)
 
         # Generate enough distinct colors using a large palette
-        palette = sns.color_palette("tab20", n_colors=n_labels)  # tab20 can go up to 20, adjust if more labels
+        palette = sns.color_palette("tab20", n_colors=n_labels)
         if n_labels > 20:
-            # fallback: generate evenly spaced colors in HSV
             import matplotlib.colors as mcolors
-            palette = [mcolors.hsv_to_rgb((i/n_labels, 0.7, 0.9)) for i in range(n_labels)]
+            palette = [mcolors.hsv_to_rgb((i / n_labels, 0.7, 0.9)) for i in range(n_labels)]
         random.shuffle(palette)
+
         # Generate enough marker styles
-        marker_styles = ['o','s','^','v','<','>','D','d','P','X','*','h','H','p','+','x','|','_','1','2','3','4']
+        marker_styles = ['o', 's', '^', 'v', '<', '>', 'D', 'd', 'P', 'X', '*', 'h', 'H', 'p', '+', 'x', '|', '_', '1',
+                         '2', '3', '4']
         if n_labels > len(marker_styles):
-            # extend markers by repeating shapes with different rotations or size adjustments
             extra_needed = n_labels - len(marker_styles)
-            marker_styles += ['o'] * extra_needed  # fallback: reuse 'o' (still unique via color)
+            marker_styles += ['o'] * extra_needed
         marker_map = {lbl: marker_styles[i % len(marker_styles)] for i, lbl in enumerate(unique_labels)}
 
         # Scatter plot
@@ -94,36 +113,61 @@ def generate_plots(city, metric, topics, restaurant_id=None, algorithm="umap"):
         for label, x, y in zip(words, X_embedded[:, 0], X_embedded[:, 1]):
             ax.annotate(label, xy=(x, y), xytext=(0, 0), fontsize=15, textcoords="offset points")
 
-        # Dynamic legend
+        # Wrap long labels for multi-line display
+        max_label_width = 20  # Characters per line - adjust as needed
+        wrapped_labels = {}
+        for lbl in unique_labels:
+            original_label = labels_mapping[lbl]
+            wrapped_labels[lbl] = '\n'.join(textwrap.wrap(original_label, width=max_label_width))
+
+        # Create legend handles with wrapped labels
         handles = [
             Line2D([0], [0], marker=marker_map[lbl], color='w',
-                   label=labels_mapping[lbl], markerfacecolor=palette[unique_labels.index(lbl)], markersize=10)
+                   label=wrapped_labels[lbl],
+                   markerfacecolor=palette[unique_labels.index(lbl)],
+                   markersize=10)
             for lbl in unique_labels
         ]
 
+        # Create legend with FIXED size box positioned in the legend area
         legend = ax.legend(
             handles=handles,
             title="Topics",
             loc="upper left",
-            bbox_to_anchor=(0.73, 0.92),
-            bbox_transform=fig.transFigure,
+            bbox_to_anchor=(1.01, 1.0),  # Just outside the plot area
+            bbox_transform=ax.transAxes,
             frameon=True,
-            borderpad=0.6,
-            labelspacing=0.6,
-            handletextpad=0.6
+            borderpad=0.8,
+            labelspacing=1.0,
+            handletextpad=0.6,
+            fontsize=9,
+            title_fontsize=11,
+            ncol=1,
+            fancybox=True,
+            shadow=False,
+            framealpha=1.0,
+            # edgecolor='black',
+            # facecolor='white',
+            alignment = 'left'
         )
 
-        # plt.tight_layout()
-        fig.subplots_adjust(right=0.75)
+        # Force legend to have a fixed width
+        legend_box = legend.get_frame()
+        legend_box.set_linewidth(1.5)
+        legend._legend_box.set_width(150)  # pixels - adjust as needed
+
         output_dir = f"../figures_paper_city/{city}"
         if restaurant_id is not None:
             output_dir = f"../figures_paper_restaurant/{city}/{restaurant_id}"
 
         os.makedirs(output_dir, exist_ok=True)
+        # plt.tight_layout()
+        # Save with FIXED dimensions - NO extra padding
         plt.savefig(
             f"{output_dir}/{p}",
             facecolor=plt.gcf().get_facecolor(),
-            bbox_inches="tight",
-            pad_inches=0.05
+            bbox_inches=None,  # Don't adjust bounds
+            dpi=100,  # Fixed DPI
+            pad_inches=0  # NO extra padding
         )
         plt.close()

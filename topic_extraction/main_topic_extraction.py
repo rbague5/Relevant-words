@@ -19,7 +19,7 @@ is_generate_subtopics = True
 
 # Your existing code to load clusters
 # for city in ["moscow", "madrid", "istanbul", "barcelona"]
-for city in ["moscow"]:
+for city in ["barcelona"]:
     summary = {}
     for metric in ["inter_distance_negative", "inter_distance_positive", "intra_distance_negative", "intra_distance_positive", "scci_negative", "scci_positive", "semantic_coherence_negative", "semantic_coherence_positive", "silhouette_score_negative", "silhouette_score_positive"]:
         base_path = os.path.join("..", f"results_by_city_paper_top{top_n_nearest_points}", city, "results", "topics", metric)

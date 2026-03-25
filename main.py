@@ -124,8 +124,9 @@ def process_single_gmm_config(params, embedding_model, nouns, gmm_path, n_cluste
             best_gmm_model = list(best_gmm_model_metric.keys())[0]
             probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, embedding_model, closest_words[best_gmm_model])
 
-            logger.info(f"Performing t-sne")
+            # logger.info(f"Performing t-sne")
             # utils.perform_tsne(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
+
             logger.info(f"Performing UMAP")
             utils.perform_umap(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
 
