@@ -1,5 +1,6 @@
 from itertools import chain
 
+import numpy as np
 from joblib import Parallel, delayed
 
 import utils
@@ -82,23 +83,30 @@ def get_corpus(data, threshold, restaurant_id=None):
     return corpus_positive, corpus_nouns_positive, corpus_negative, corpus_nouns_negative
 
 
-def process_single_gmm_config(params, embedding_model, nouns, gmm_path, n_clusters_range,
-                               top_n_nearest_points, city_path, class_review, restaurant_id,
-                               top_n_restaurants, city, idx, total_params):
+def process_single_gmm_config(
+    params,
+    embedding_corpus,
+    corpus,
+    n_clusters_range,
+    top_n_nearest_points,
+    class_review,
+    restaurant_id,
+    top_n_restaurants,
+    city,
+    idx,
+    total_params
+):
     """Process a single GMM configuration"""
     logger.info(f"{idx+1}/{total_params} Training GMM model with params: {params}")
     img_name = "_".join([f"{k}-{v}" for k, v in params.items()]).replace(".", "_").replace("covariance", "cov")
-
     if restaurant_id is not None:
         city_path_config = os.path.join(f"results_by_restaurant_top{top_n_nearest_points}", str(city), str(restaurant_id))
-        embedding_model_path = os.path.join(city_path_config, img_name, w2v_models_path_by_city, embedding_model_name)
         gmm_path_config = os.path.join(city_path_config, img_name, gmm_models_path_by_city, class_review)
         topics_path_images = os.path.join(city_path_config, img_name, figures_path_by_city)
         topics_path_nouns = os.path.join(city_path_config, img_name, topics_clusters_path_by_city)
         cluster_metrics_path = os.path.join(city_path_config, img_name, "metrics", class_review)
     else:
         city_path_config = os.path.join(f"results_by_city_top{top_n_nearest_points}", str(city))
-        embedding_model_path = os.path.join(city_path_config, img_name, w2v_models_path_by_city, embedding_model_name)
         gmm_path_config = os.path.join(city_path_config, img_name, gmm_models_path_by_city, class_review)
         topics_path_images = os.path.join(city_path_config, img_name, figures_path_by_city)
         topics_path_nouns = os.path.join(city_path_config, img_name, topics_clusters_path_by_city)
@@ -106,9 +114,15 @@ def process_single_gmm_config(params, embedding_model, nouns, gmm_path, n_cluste
 
     # Train or load GMM model
     trained_models, cluster_metrics, closest_words = utils.train_gmm_model(
-        embedding_model, nouns, gmm_path_config, n_clusters_range=n_clusters_range, top_n_points=top_n_nearest_points,
-        covariance_type=params["covariance_type"], reg_covar=params["reg_covar"],
-        max_iter=params["max_iter"], n_init=params["n_init"]
+        embedding_corpus,
+        corpus,
+        gmm_path_config,
+        n_clusters_range=n_clusters_range,
+        top_n_points=top_n_nearest_points,
+        covariance_type=params["covariance_type"],
+        reg_covar=params["reg_covar"],
+        max_iter=params["max_iter"],
+        n_init=params["n_init"]
     )
 
     utils.save_cluster_metrics(cluster_metrics, file_path=os.path.join(cluster_metrics_path, f"all_metrics"))
@@ -122,13 +136,37 @@ def process_single_gmm_config(params, embedding_model, nouns, gmm_path, n_cluste
         if best_gmm_model_metric is not None:
             logger.info(f"Best cluster for {metric}: {best_gmm_model_metric}")
             best_gmm_model = list(best_gmm_model_metric.keys())[0]
-            probabilities, cluster_words, labels = utils.retrieve_best_model_results(best_gmm_model, trained_models, embedding_model, closest_words[best_gmm_model])
-
+            probabilities, cluster_words, labels = utils.retrieve_best_model_results(
+                best_gmm_model,
+                trained_models,
+                embedding_corpus,
+                corpus,
+                closest_words[best_gmm_model]
+            )
             # logger.info(f"Performing t-sne")
             # utils.perform_tsne(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
 
             logger.info(f"Performing UMAP")
-            utils.perform_umap(embedding_model, labels, closest_words[best_gmm_model], topics_path_images, class_review, metric)
+            word_to_idx = {w: i for i, w in enumerate(corpus)}
+
+            # Flatten cluster_words and create mapping to labels
+            flat_words = [w for cluster in cluster_words.values() for w in cluster]
+            word_to_label = {w: idx for idx, (cluster_idx, cluster) in enumerate(cluster_words.items()) for w in
+                             cluster}
+
+            # Filter words to those present in corpus
+            umap_words = [w for w in flat_words if w in word_to_idx]
+            umap_embeddings = np.array([embedding_corpus[word_to_idx[w]] for w in umap_words])
+            umap_labels = [word_to_label[w] for w in umap_words]
+
+            utils.perform_umap(
+                embedding_corpus=umap_embeddings,
+                labels=umap_labels,
+                words=umap_words,
+                figure_path=topics_path_images,
+                review_type=class_review,
+                metric=metric,
+            )
 
             logger.info(f"Saving topic clusters results")
             utils.save_topic_clusters_results(cluster_words, topics_path_nouns, class_review, metric)
@@ -161,7 +199,6 @@ def topic_clustering(data, city, restaurant_id=None):
         all_clusters_metrics = {}
         logger.info(f"Calculating {class_review} with model: {embedding_model_name} for city: {city}")
         # corpus = corpus_positive if class_review == 'positive' else corpus_negative
-        embedding_model = utils.train_or_load_embedding_model(model_name=embedding_model_name)
         nouns = set(corpus_nouns_positive) if class_review == "positive" else set(corpus_nouns_negative)
         # params_list = params_list[:2]
         if restaurant_id is not None:
@@ -169,11 +206,30 @@ def topic_clustering(data, city, restaurant_id=None):
         else:
             city_path = os.path.join(f"results_by_city_top{top_n_nearest_points}", str(city))
 
-        results = Parallel(n_jobs=-1, verbose=10)(
+        embedding_model = utils.train_or_load_embedding_model(model_name=embedding_model_name)
+        # Unique filename for embeddings
+        unique_name = f"{embedding_model_name}_city_{city}"
+        if restaurant_id is not None:
+            unique_name += f"_restaurant{restaurant_id}"
+        unique_name += f"_{class_review}.npz"
+
+        save_path = os.path.join("embeddings", unique_name)
+        corpus, embedding_corpus = utils.extract_embeddings(embedding_model, nouns, save_path=save_path)
+
+        logger.info(f"Corpus and embeddings extracted for {class_review} reviews, total unique words: {len(corpus)}")
+        results = Parallel(n_jobs=NUM_WORKERS, verbose=10)(
             delayed(process_single_gmm_config)(
-                params, embedding_model, nouns, None, n_clusters_range,
-                top_n_nearest_points, city_path, class_review, restaurant_id,
-                top_n_restaurants, city, idx, len(params_list)
+                params=params,
+                embedding_corpus=embedding_corpus,  # pass embeddings
+                corpus=corpus,  # pass corpus list
+                n_clusters_range=n_clusters_range,
+                top_n_nearest_points=top_n_nearest_points,
+                class_review=class_review,
+                restaurant_id=restaurant_id,
+                top_n_restaurants=top_n_restaurants,
+                city=city,
+                idx=idx,
+                total_params=len(params_list)
             ) for idx, params in enumerate(params_list)
         )
         for img_name, best_clusters in results:
@@ -209,7 +265,7 @@ def topic_clustering(data, city, restaurant_id=None):
 
 if __name__ == "__main__":
     # ["gijon", "moscow", "madrid", "istanbul", "barcelona"]
-    for city in ["istanbul", "barcelona"]:
+    for city in ["madrid", "istanbul", "barcelona"]:
         logger.info(f"Checking city: {city.title()}")
 
         logger.info(f"Creating reviews data")

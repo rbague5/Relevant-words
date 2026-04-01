@@ -46,3 +46,5 @@ w2v_models_path_tf_itf_city = f"./models/word2vec/"
 gmm_models_path_tf_itf_city = f"./models/gmm/"
 topics_clusters_path_tf_itf_city = f"./results/topics/"
 figures_path_tf_itf_city = f"./results/figures/"
+
+NUM_WORKERS = -1

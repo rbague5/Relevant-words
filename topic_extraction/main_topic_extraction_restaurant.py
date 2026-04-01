@@ -3,6 +3,8 @@ import json
 import re
 
 from collections import Counter
+
+from dotenv import load_dotenv
 from topicgpt_python import *
 import sys
 from topicgpt_python import generate_topic_lvl1, assign_topics, correct_topics, generate_topic_lvl2
@@ -10,7 +12,9 @@ from topicgpt_python import generate_topic_lvl1, assign_topics, correct_topics, 
 from config import top_n_nearest_points
 from utils import logger
 
-os.environ["OPENAI_API_KEY"] = "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"
+load_dotenv()
+
+
 api = "openai"
 model = "gpt-4o"
 is_verbose = True

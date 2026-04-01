@@ -17,3 +17,4 @@ venv
 /topic_extraction/data_restaurants/
 /figures_paper_city/
 /figures_paper_restaurant/
+/embeddings/

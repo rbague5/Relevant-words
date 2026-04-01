@@ -3,6 +3,8 @@ import json
 import re
 
 from collections import Counter
+
+from dotenv import load_dotenv
 from topicgpt_python import *
 import sys
 from topicgpt_python import generate_topic_lvl1, assign_topics, correct_topics, generate_topic_lvl2
@@ -10,7 +12,8 @@ from topicgpt_python import generate_topic_lvl1, assign_topics, correct_topics, 
 from config import top_n_nearest_points
 from utils import logger
 
-os.environ["OPENAI_API_KEY"] = "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"
+load_dotenv()
+
 api = "openai"
 model = "gpt-4o"
 is_verbose = True
@@ -35,7 +38,7 @@ for city in ["barcelona"]:
         logger.info(f"Loaded {len(clusters)} clusters.")
 
         # Convert your clusters to the required JSONL format
-        output_dir = "data/input"
+        output_dir = "data_cities/input"
         os.makedirs(output_dir, exist_ok=True)
         file = f"{city}_{metric}_clusters.jsonl"
         data_sample = os.path.join(output_dir, file)
@@ -52,11 +55,11 @@ for city in ["barcelona"]:
 
         logger.info(f"Created JSONL file: {data_sample}")
 
-        os.makedirs(f"data/output/top_{top_n_nearest_points}/{city}/{metric}", exist_ok=True)
-        generation_prompt = "data/prompt/generation_1.txt"
-        generation_seed = "data/input/seed_topics.txt"
-        generation_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/generation_1.jsonl"
-        generation_topic_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/generation_1.md"
+        os.makedirs(f"data_cities/output/top_{top_n_nearest_points}/{city}/{metric}", exist_ok=True)
+        generation_prompt = "data_cities/prompt/generation_1.txt"
+        generation_seed = "data_cities/input/seed_topics.txt"
+        generation_output = f"data_cities/output/top_{top_n_nearest_points}/{city}/{metric}/generation_1.jsonl"
+        generation_topic_output = f"data_cities/output/top_{top_n_nearest_points}/{city}/{metric}/generation_1.md"
 
         generate_topic_lvl1(
             api,
@@ -69,10 +72,10 @@ for city in ["barcelona"]:
             verbose=is_verbose,
         )
 
-        refinement_prompt = "data/prompt/refinement.txt"
-        refinement_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/refinement.jsonl"
-        refinement_topic_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/refinement.md"
-        refinement_mapping_file = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/refinement_mapping.json"
+        refinement_prompt = "data_cities/prompt/refinement.txt"
+        refinement_output = f"data_cities/output/top_{top_n_nearest_points}/{city}/{metric}/refinement.jsonl"
+        refinement_topic_output = f"data_cities/output/top_{top_n_nearest_points}/{city}/{metric}/refinement.md"
+        refinement_mapping_file = f"data_cities/output/top_{top_n_nearest_points}/{city}/{metric}/refinement_mapping.json"
         refinement_remove = False
 
         # Optional: Refine topics if needed
@@ -91,9 +94,9 @@ for city in ["barcelona"]:
             )
 
 
-        generation_2_prompt = "data/prompt/generation_2.txt"
-        generation_2_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/generation_2.jsonl"
-        generation_2_topic_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/generation_2.md"
+        generation_2_prompt = "data_cities/prompt/generation_2.txt"
+        generation_2_output = f"data_cities/output/top_{top_n_nearest_points}/{city}/{metric}/generation_2.jsonl"
+        generation_2_topic_output = f"data_cities/output/top_{top_n_nearest_points}/{city}/{metric}/generation_2.md"
 
         # Optional: Generate subtopics
         if is_generate_subtopics:
@@ -108,8 +111,8 @@ for city in ["barcelona"]:
                 verbose=is_verbose,
             )
 
-        assignment_prompt = "data/prompt/assignment.txt"
-        assignment_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/assignment.jsonl"
+        assignment_prompt = "data_cities/prompt/assignment.txt"
+        assignment_output = f"data_cities/output/top_{top_n_nearest_points}/{city}/{metric}/assignment.jsonl"
 
         if is_generate_subtopics:
             generation_topic_output = generation_2_topic_output
@@ -125,8 +128,8 @@ for city in ["barcelona"]:
             verbose=is_verbose,
         )
 
-        correction_prompt = "data/prompt/correction.txt"
-        correction_output = f"data/output/top_{top_n_nearest_points}/{city}/{metric}/assignment_corrected.jsonl"
+        correction_prompt = "data_cities/prompt/correction.txt"
+        correction_output = f"data_cities/output/top_{top_n_nearest_points}/{city}/{metric}/assignment_corrected.jsonl"
         # Correction
         correct_topics(
             api,
@@ -180,7 +183,7 @@ for city in ["barcelona"]:
         c = Counter(topics)
         summary[metric] = dict(c)
         # Generate output path safely
-        output_path = os.path.join("data", f"results_top_{top_n_nearest_points}", city, f"{metric}.json")
+        output_path = os.path.join("data_cities", f"results_top_{top_n_nearest_points}", city, f"{metric}.json")
         # Ensure output folder exists
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -189,5 +192,5 @@ for city in ["barcelona"]:
             json.dump(data, outfile, ensure_ascii=False, indent=2)
 
         logger.info(f"Converted {correction_output} to {output_path}")
-    with open(os.path.join("data", f"results_top_{top_n_nearest_points}", f"summary_{city}.json"), "w", encoding="utf-8") as outfile:
+    with open(os.path.join("data_cities", f"results_top_{top_n_nearest_points}", f"summary_{city}.json"), "w", encoding="utf-8") as outfile:
         json.dump(summary, outfile, ensure_ascii=False, indent=2)

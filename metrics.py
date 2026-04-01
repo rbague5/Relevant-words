@@ -8,49 +8,41 @@ from nltk.tokenize import word_tokenize
 from utils import get_top_n_nearest_points
 
 
-def calculate_semantic_coherence(embedding_model, top_words_per_cluster):
+def calculate_semantic_coherence(embedding_corpus, corpus, top_words_per_cluster):
     """
-    Computes semantic coherence of clusters using pairwise cosine similarity of top words.
-    Works for Word2Vec, FastText, GloVe, SBERT, MiniLM, E5.
+    Computes semantic coherence using pairwise cosine similarity
+    BUT using precomputed embeddings (no model calls)
     """
 
-    # Determine embedding access
-    if hasattr(embedding_model, 'wv'):
-        keyed_vectors = embedding_model.wv
-        def get_vector(word):
-            return keyed_vectors[word]
-        def has_word(word):
-            return word in keyed_vectors.key_to_index
-    elif hasattr(embedding_model, 'get_word_embedding'):
-        # Contextual models
-        def get_vector(word):
-            return embedding_model.get_word_embedding(str(word))
-        def has_word(word):
-            return True  # contextual embeddings can embed any word
-    else:
-        keyed_vectors = embedding_model
-        def get_vector(word):
-            return keyed_vectors[word]
-        def has_word(word):
-            return word in getattr(keyed_vectors, 'key_to_index', set())
-
-    # Get top N words per cluster
-    # top_words_per_cluster = get_top_n_nearest_points(gmm, embedding_model, corpus_words, n_points=top_n)
+    # Build word → index mapping once
+    word_to_idx = {word: i for i, word in enumerate(corpus)}
 
     coherence_scores = []
 
     for cluster_words in top_words_per_cluster:
         similarities = []
-        for word1, word2 in combinations(cluster_words, 2):
-            if has_word(word1) and has_word(word2):
-                vec1 = get_vector(word1).reshape(1, -1)
-                vec2 = get_vector(word2).reshape(1, -1)
-                sim = cosine_similarity(vec1, vec2)[0][0]
-                similarities.append(sim)
+
+        # Get valid indices only
+        indices = [word_to_idx[w] for w in cluster_words if w in word_to_idx]
+
+        if len(indices) < 2:
+            coherence_scores.append(0)
+            continue
+
+        # Extract vectors
+        vecs = embedding_corpus[indices]  # shape: (k, dim)
+        sim_matrix = cosine_similarity(vecs)
+
+        # Take upper triangle (excluding diagonal)
+        triu_indices = np.triu_indices(len(indices), k=1)
+        pairwise_sims = sim_matrix[triu_indices]
+
+        if len(pairwise_sims) > 0:
+            similarities.extend(pairwise_sims)
+
         coherence_scores.append(np.mean(similarities) if similarities else 0)
 
     return np.mean(coherence_scores) if coherence_scores else 0
-
 
 def calculate_perplexity(gmm, embedding_corpus):
     # Perplexity is a commonly used metric for language models; for GMMs, it can be adapted

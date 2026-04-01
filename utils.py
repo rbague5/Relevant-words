@@ -181,6 +181,7 @@ def train_or_load_embedding_model(model_name, model_path=None, corpus=None):
         raise ValueError(f"Unsupported model name: {model_name}")
 
     _model_cache[model_name] = model
+    logger.info(f"Loaded model: {model_name}")
     return model
 
 
@@ -237,101 +238,73 @@ def find_elbow_point(scores):
     return elbow_index + 1  # Adjust for index offset
 
 
-def get_top_n_nearest_points(gmm_model, embedding_model, corpus, n_points=10):
+def get_top_n_nearest_points(gmm_model, embedding_corpus, corpus, n_points=10):
     """
-    Retrieve exactly N words per cluster with maximum semantic purity.
-    Each word is assigned to only its best cluster (highest similarity).
-    If a cluster lacks words, it "borrows" from other clusters based on relative preference.
-    Works for Word2Vec, FastText, GloVe, SBERT, MiniLM, E5.
-    Optimized for large corpora: no full embedding matrix is created.
+    Same logic as original:
+    - Assign each word to best cluster
+    - Take top N per cluster
+    - Rebalance deficits
+    BUT fully vectorized (no embedding_model needed)
     """
-    # --- Prepare access to embeddings ---
-    if hasattr(embedding_model, 'wv'):
-        # Word2Vec / FastText / GloVe
-        keyed_vectors = embedding_model.wv
-        vocab = [word for word in corpus if word in keyed_vectors.key_to_index]
 
-        def get_vec(word):
-            return keyed_vectors[word]
-    elif hasattr(embedding_model, 'get_word_embedding'):
-        # SBERT / E5 / MiniLM / transformer
-        vocab = corpus  # keep all words, filter lazily during embedding
-
-        def get_vec(word):
-            return embedding_model.get_word_embedding(str(word))
-    else:
-        keyed_vectors = embedding_model
-        vocab = sorted(set(keyed_vectors.index_to_key).intersection(corpus))
-
-    if not vocab:
+    if len(corpus) == 0:
         return []
 
-    # --- Compute all similarities for all words ---
     n_clusters = len(gmm_model.means_)
-    word_all_sims = {}  # {word: [sim_cluster_0, sim_cluster_1, ...]}
 
-    for word in vocab:
-        try:
-            vec = get_vec(word).reshape(1, -1)
-        except Exception:
-            continue  # skip words that cannot be embedded
-
-        sims = []
-        for centroid in gmm_model.means_:
-            sim = cosine_similarity(vec, centroid.reshape(1, -1))[0, 0]
-            sims.append(sim)
-
-        word_all_sims[word] = sims
-
-    if not word_all_sims:
-        return [[] for _ in range(n_clusters)]
+    # 🔥 Compute ALL similarities at once
+    sim_matrix = cosine_similarity(embedding_corpus, gmm_model.means_)
+    # shape: (n_words, n_clusters)
 
     # --- Phase 1: Assign each word to its best cluster ---
+    best_clusters = np.argmax(sim_matrix, axis=1)
+
     cluster_words = [[] for _ in range(n_clusters)]
     assigned_words = set()
 
-    for word, sims in word_all_sims.items():
-        best_cluster = max(range(n_clusters), key=lambda i: sims[i])
-        cluster_words[best_cluster].append((sims[best_cluster], word))
+    for word_idx, cluster_idx in enumerate(best_clusters):
+        sim = sim_matrix[word_idx, cluster_idx]
+        word = corpus[word_idx]
+        cluster_words[cluster_idx].append((sim, word))
 
     # Sort each cluster by similarity (descending)
     for i in range(n_clusters):
         cluster_words[i].sort(reverse=True)
 
-    # --- Phase 2: Balance clusters to ensure N words each ---
+    # --- Phase 2: Take top N per cluster ---
     final_clusters = [[] for _ in range(n_clusters)]
 
-    # First, take top N from each cluster if available
     for i in range(n_clusters):
         for sim, word in cluster_words[i][:n_points]:
             final_clusters[i].append(word)
             assigned_words.add(word)
 
-    # Identify clusters that need more words
-    deficit_clusters = [(i, n_points - len(final_clusters[i]))
-                        for i in range(n_clusters)
-                        if len(final_clusters[i]) < n_points]
+    # --- Phase 3: Balance clusters (same logic) ---
+    deficit_clusters = [
+        (i, n_points - len(final_clusters[i]))
+        for i in range(n_clusters)
+        if len(final_clusters[i]) < n_points
+    ]
 
     if deficit_clusters:
-        # Create a pool of unassigned words with their similarities
-        candidate_pool = []
-        for word, sims in word_all_sims.items():
-            if word not in assigned_words:
-                candidate_pool.append((word, sims))
+        # Build candidate pool (same as before)
+        candidate_indices = [
+            i for i, word in enumerate(corpus)
+            if word not in assigned_words
+        ]
 
-        # For each deficit cluster, find best available words
         for cluster_idx, deficit in deficit_clusters:
-            # Score candidates by similarity to this cluster
-            scored_candidates = [
-                (sims[cluster_idx], word, sims)
-                for word, sims in candidate_pool
-            ]
-            scored_candidates.sort(reverse=True)
+            # Get similarities for this cluster
+            sims = sim_matrix[candidate_indices, cluster_idx]
 
-            # Assign top words to this cluster
+            # Sort candidates by similarity
+            sorted_idx = np.argsort(sims)[::-1]
+
             assigned_count = 0
-            for sim, word, sims in scored_candidates:
-                if word not in assigned_words and assigned_count < deficit:
+            for idx in sorted_idx:
+                word = corpus[candidate_indices[idx]]
+
+                if word not in assigned_words:
                     final_clusters[cluster_idx].append(word)
                     assigned_words.add(word)
                     assigned_count += 1
@@ -431,46 +404,73 @@ def select_overall_best_cluster(cluster_metrics, weights=None):
     # Select the cluster with the highest overall score
     return max(overall_scores, key=overall_scores.get)
 
+def extract_embeddings(embedding_model, nouns, save_path=None):
+    """
+    Extract embeddings for a list of nouns from any supported embedding model.
+    If save_path is provided, it will try to load precomputed embeddings from disk.
+    If not found, it will compute and save them.
 
-def train_gmm_model(embedding_model, nouns, model_path, n_clusters_range=range(3, 10), top_n_points=10, covariance_type='diag',
+    Args:
+        embedding_model: any supported embedding model (Word2Vec, FastText, GloVe, SBERT, E5, MiniLM)
+        nouns: list of words to extract embeddings for
+        save_path: optional path to save/load embeddings (.npz)
+
+    Returns:
+        corpus: list of words found in the model
+        embedding_corpus: np.ndarray of shape (len(corpus), embedding_dim)
+    """
+    # --- Try to load from disk if save_path exists ---
+    if save_path and os.path.exists(save_path):
+        data = np.load(save_path, allow_pickle=True)
+        corpus = data['corpus'].tolist()
+        embedding_corpus = data['embeddings']
+        logger.info(f"Loaded embeddings from {save_path}")
+        return corpus, embedding_corpus
+
+    # --- Prepare corpus and vector retrieval function ---
+    if hasattr(embedding_model, 'wv'):
+        # Word2Vec / FastText / GloVe
+        keyed_vectors = embedding_model.wv
+        vocab = set(keyed_vectors.index_to_key)
+        corpus = sorted(vocab.intersection(nouns))
+        embedding_corpus = np.vstack([keyed_vectors[word] for word in corpus]).astype(np.float32)
+
+    elif hasattr(embedding_model, 'get_word_embedding'):
+        # Transformer-based models: SBERT / E5 / MiniLM
+        corpus = sorted(set(nouns))
+        embedding_list = [embedding_model.get_word_embedding(word) for word in corpus]
+        embedding_corpus = np.vstack(embedding_list).astype(np.float32)
+
+    else:
+        # Fallback: keyed vector wrapper (e.g., GloVe)
+        vocab = set(embedding_model.index_to_key)
+        corpus = sorted(vocab.intersection(nouns))
+        embedding_corpus = np.vstack([embedding_model[word] for word in corpus]).astype(np.float32)
+
+    # --- Save to disk if save_path is provided ---
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        np.savez_compressed(save_path, corpus=corpus, embeddings=embedding_corpus)
+        logger.info(f"Saved embeddings to {save_path}")
+
+    return corpus, embedding_corpus
+
+def train_gmm_model(embedding_corpus, corpus, model_path, n_clusters_range=range(3, 10), top_n_points=10, covariance_type='diag',
                 reg_covar=1e-5, max_iter=200, n_init=3):
-    from metrics import calculate_semantic_coherence, calculate_intra_distances, calculate_inter_distances, calculate_npmi, calculate_scci
+    from metrics import calculate_semantic_coherence, calculate_intra_distances, calculate_inter_distances
     from new_scci import calculate_scci_improved
 
     clustering_results = {}
     cluster_metrics = {}
     closest = {}
 
-    if hasattr(embedding_model, 'wv'):  # Word2Vec / FastText / Google / GloVe
-        keyed_vectors = embedding_model.wv
-        vocab = set(keyed_vectors.index_to_key)
-        corpus = sorted(vocab.intersection(nouns))
-        embedding_corpus = np.array([keyed_vectors[word] for word in corpus])
-    elif hasattr(embedding_model, 'get_word_embedding'):  # MiniLM / SBERT / E5
-        class ContextualKeyedWrapper:
-            def __init__(self, model):
-                self.model = model
-
-            def __getitem__(self, word):
-                return self.model.get_word_embedding(str(word))
-
-            def index_to_key(self):
-                # Contextual models don't have vocab, but corpus acts as vocab
-                return corpus
-        keyed_vectors = ContextualKeyedWrapper(embedding_model)
-        corpus = sorted(set(nouns))  # contextual models embed any word
-        embedding_corpus = np.array([embedding_model.get_word_embedding(word) for word in corpus])
-    else:
-        keyed_vectors = embedding_model
-        corpus = sorted(set(keyed_vectors.index_to_key).intersection(nouns))
-        embedding_corpus = np.array([keyed_vectors[word] for word in corpus])
 
     for n_clusters in n_clusters_range:
         model_name = str(n_clusters)
         model_file_path = os.path.join(model_path, model_name)
 
         if not model_saved(model_path, model_name):
-            peaks = retrieve_peaks(n_clusters, keyed_vectors, corpus)
+            peaks = retrieve_peaks(n_clusters, corpus, embedding_corpus)
             gmm = GaussianMixture(
                 n_components=n_clusters,
                 means_init=peaks,
@@ -488,12 +488,12 @@ def train_gmm_model(embedding_model, nouns, model_path, n_clusters_range=range(3
         clustering_results[model_name] = gmm
 
         labels = gmm.predict(embedding_corpus)
-        top_n_closest_words = get_top_n_nearest_points(gmm, embedding_model, corpus, top_n_points)
+        top_n_closest_words = get_top_n_nearest_points(gmm, embedding_corpus, corpus, top_n_points)
 
         closest[model_name] = top_n_closest_words
 
         sil_score = silhouette_score(embedding_corpus, labels) if len(set(labels)) > 1 else None
-        semantic_coherence = calculate_semantic_coherence(embedding_model, top_words_per_cluster=top_n_closest_words)
+        semantic_coherence = calculate_semantic_coherence(embedding_corpus, corpus, top_words_per_cluster=top_n_closest_words)
         intra_distance = calculate_intra_distances(gmm, embedding_corpus)
         inter_distance = calculate_inter_distances(gmm, embedding_corpus)
         # npmi = calculate_npmi(gmm, corpus, keyed_vectors, top_n=top_n_points)
@@ -516,32 +516,49 @@ def train_gmm_model(embedding_model, nouns, model_path, n_clusters_range=range(3
     return clustering_results, cluster_metrics, closest
 
 
-def retrieve_peaks(n_peaks, embedding_model, corpus):
+def retrieve_peaks(n_clusters, corpus, embedding_corpus):
+    """
+    Selects initial GMM cluster centers ('peaks') based on the n_clusters
+    most frequent words in the corpus. Returns their embeddings.
+
+    Parameters
+    ----------
+    n_clusters : int
+        Number of GMM clusters.
+    corpus : list[str]
+        List of all words in the corpus (aligned with embedding_corpus).
+    embedding_corpus : np.ndarray
+        Precomputed embeddings, shape (len(corpus), dim)
+
+    Returns
+    -------
+    peaks : np.ndarray
+        Initial cluster centers for GMM, shape (n_clusters, embedding_dim)
+    """
+
+    # Count word frequencies
+    word_counts = Counter(corpus)
+
+    # Select the top-n_clusters most frequent words
+    top_words = [word for word, _ in word_counts.most_common(n_clusters)]
+
+    # Map words to indices in corpus
+    word_to_idx = {word: i for i, word in enumerate(corpus)}
+
+    # Collect embeddings for the top words
     peaks = []
+    for word in top_words:
+        idx = word_to_idx.get(word)
+        if idx is not None:
+            peaks.append(embedding_corpus[idx])
 
-    # Detect if embedding_model is a keyed model or wrapper
-    if hasattr(embedding_model, 'wv'):
-        keyed_vectors = embedding_model.wv
-    else:
-        keyed_vectors = embedding_model
+    # If there are fewer peaks than n_clusters, pad randomly
+    if len(peaks) < n_clusters:
+        remaining_idx = [i for i in range(len(corpus)) if corpus[i] not in top_words]
+        for i in range(n_clusters - len(peaks)):
+            peaks.append(embedding_corpus[remaining_idx[i % len(remaining_idx)]])
 
-    # Ensure index_keys is always a LIST of words
-    if callable(getattr(keyed_vectors, 'index_to_key', None)):
-        index_keys = list(keyed_vectors.index_to_key())
-    else:
-        index_keys = list(keyed_vectors.index_to_key)
-
-    last_index_found = 0
-
-    for i in range(n_peaks):
-        while last_index_found < len(index_keys):
-            candidate_peak = index_keys[last_index_found]
-            last_index_found += 1
-            if candidate_peak in corpus:
-                peaks.append(keyed_vectors[candidate_peak])
-                break
-
-    return peaks
+    return np.array(peaks)
 
 
 def retrieve_best_gmm_model(aic_bic_results):
@@ -550,61 +567,51 @@ def retrieve_best_gmm_model(aic_bic_results):
     return results_df[results_df["aic"] == results_df["aic"].min()].index[0]
 
 
-def retrieve_best_model_results(best_gmm_model_name, trained_models, embedding_model, closest_words):
+def retrieve_best_model_results(best_gmm_model_name, trained_models, embedding_corpus, corpus, closest_words):
+    """
+    Retrieve log-likelihoods, clustered words, and labels for the best GMM model.
+    Uses precomputed embeddings (`embedding_corpus`) and word list (`corpus`).
+
+    Parameters:
+        best_gmm_model_name: str, key of the trained GMM model
+        trained_models: dict of {model_name: GaussianMixture instance}
+        embedding_corpus: np.ndarray of shape (num_words, embedding_dim)
+        corpus: list of words corresponding to embedding_corpus rows
+        closest_words: list of lists of top words per cluster
+
+    Returns:
+        probabilities: array of log-likelihoods for each word in embedding_corpus
+        clustered_words: dict {cluster_idx: [words]}
+        labels: list of cluster indices for each word
+    """
     model = trained_models[best_gmm_model_name]
     n_clusters = len(model.means_)
 
-    # Obtener vectorizador adecuado
-    if hasattr(embedding_model, 'wv'):
-        keyed_vectors = embedding_model.wv
-    elif hasattr(embedding_model, 'get_word_embedding'):
-        class ContextualWrapper:
-            def __init__(self, model):
-                self.model = model
+    # --- Map words in closest_words to indices in corpus ---
+    word_to_idx = {word: i for i, word in enumerate(corpus)}
 
-            def __getitem__(self, word):
-                return self.model.get_word_embedding(str(word))
-
-            def __contains__(self, word):
-                try:
-                    _ = self.model.get_word_embedding(str(word))
-                    return True
-                except:
-                    return False
-
-        keyed_vectors = ContextualWrapper(embedding_model)
-    else:
-        keyed_vectors = embedding_model
-
-    # Flatten + filtrar palabras fuera del vocabulario
-    try:
-        flat_words = [word for word in np.array(closest_words).flatten().tolist() if word in keyed_vectors]
-        # Embeddings y etiquetas
-        embedding_corpus = np.array([keyed_vectors[word] for word in flat_words])
-        labels = np.indices(np.array(closest_words).shape)[0].flatten().tolist()[:len(embedding_corpus)]
-    except Exception as e:
-        flat_words = [ word for group in closest_words for word in (group if isinstance(group, (list, tuple)) else [group]) if word in keyed_vectors]
-        embedding_corpus = np.array([keyed_vectors[word] for word in flat_words])
-        labels = []
-        for idx, group in enumerate(closest_words):
-            for word in (group if isinstance(group, (list, tuple)) else [group]):
-                if word in keyed_vectors:
-                    labels.append(idx)
+    flat_words = []
+    labels = []
+    for cluster_idx, group in enumerate(closest_words):
+        for word in (group if isinstance(group, (list, tuple)) else [group]):
+            if word in word_to_idx:
+                flat_words.append(word)
+                labels.append(cluster_idx)
 
     if not flat_words:
-        raise ValueError("No valid words found in the model vocabulary.")
+        raise ValueError("No valid words from closest_words found in corpus.")
 
-    # Predicción de probabilidad logarítmica por muestra
-    probabilities = model.score_samples(embedding_corpus)
+    # --- Extract embeddings for these words ---
+    indices = [word_to_idx[w] for w in flat_words]
+    embedding_subset = embedding_corpus[indices]
 
-    # Alternativa: cluster real de cada punto
-    # labels = model.predict(embedding_corpus)
+    # --- Compute log-likelihoods under GMM ---
+    probabilities = model.score_samples(embedding_subset)
 
-    # Resultado agrupado por clusters
+    # --- Group words by cluster ---
     clustered_words = get_words_by_cluster(flat_words, labels, n_clusters)
 
     return probabilities, clustered_words, labels
-
 
 def save_cluster_metrics(metrics, file_path):
     def _convert_to_serializable(obj):
@@ -729,43 +736,12 @@ def perform_tsne(embedding_model, labels, closest_words, figure_path, review_typ
     plt.close()
 
 def perform_umap(
-    embedding_model, labels, closest_words, figure_path, review_type, metric, n_neighbors=15, min_dist=0.1, img_name: str = ""
+    embedding_corpus, labels, words, figure_path, review_type, metric, n_neighbors=15, min_dist=0.1, img_name: str = ""
 ):
-    # Soporte para modelos con o sin `.wv`
-    if hasattr(embedding_model, 'wv'):
-        keyed_vectors = embedding_model.wv
-    elif hasattr(embedding_model, 'get_word_embedding'):
-        class ContextualWrapper:
-            def __init__(self, model):
-                self.model = model
-
-            def __getitem__(self, word):
-                return self.model.get_word_embedding(str(word))
-
-            def __contains__(self, word):
-                try:
-                    _ = self.model.get_word_embedding(str(word))
-                    return True
-                except:
-                    return False
-        keyed_vectors = ContextualWrapper(embedding_model)
-    else:
-        keyed_vectors = embedding_model
-
-    # Flatten closest_words
-    try:
-        flat_words = np.array(closest_words).flatten().tolist()
-    except Exception:
-        flat_words = [w for sublist in closest_words for w in (sublist if isinstance(sublist, list) else [sublist])]
-
-    # Filter words present in the embedding
-    filtered = [(word, keyed_vectors[word]) for word in flat_words if word in keyed_vectors]
-    if not filtered:
-        raise ValueError("No valid words found in the model vocabulary.")
-
-    words, embeddings = zip(*filtered)
-    embedding_corpus = np.array(embeddings)
-
+    """
+    Perform UMAP on a precomputed embedding_corpus for given words and labels.
+    Saves both the UMAP object and a scatterplot.
+    """
     n_samples = len(embedding_corpus)
     random_state = 42
 
