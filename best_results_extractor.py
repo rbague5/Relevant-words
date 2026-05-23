@@ -42,7 +42,7 @@ if __name__ == "__main__":
     os.makedirs(filtered_results_path, exist_ok=True)
     all_results = {}
     # for city in ["moscow", "madrid", "istanbul", "barcelona"]
-    for city in ["moscow", "madrid", "istanbul", "barcelona"]:
+    for city in ["barcelona"]:
         logger.info(f"Checking city: {city.title()}")
         all_results[city] = {}
         for class_type in ["positive", "negative"]:

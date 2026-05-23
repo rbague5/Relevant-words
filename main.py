@@ -265,7 +265,7 @@ def topic_clustering(data, city, restaurant_id=None):
 
 if __name__ == "__main__":
     # ["gijon", "moscow", "madrid", "istanbul", "barcelona"]
-    for city in ["madrid", "istanbul", "barcelona"]:
+    for city in ["moscow", "madrid", "istanbul", "barcelona"]:
         logger.info(f"Checking city: {city.title()}")
 
         logger.info(f"Creating reviews data")
@@ -279,6 +279,7 @@ if __name__ == "__main__":
         logger.info(f"N. of reviews: {data['reviewId'].nunique()}")
         logger.info(f"N. of rating: {data['rating'].value_counts().sort_index(ascending=False)}")
         logger.info(f"Review dates between: {data['date'].min()} and {data['date'].max()}")
+        rating_counts = data['rating'].value_counts().sort_index()
 
         main_analysis_by_city(data, city)
         main_analysis_by_restaurant(data, city)

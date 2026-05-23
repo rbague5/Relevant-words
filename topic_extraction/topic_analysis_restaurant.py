@@ -98,35 +98,68 @@ def load_jsonl2(path: str, key: str = "responses"):
 def generate_imgs_latex(city: str, restaurant_id: str, metrics: list):
     metrics[0] = metrics[0].replace("_", "-")
     metrics[1] = metrics[1].replace("_", "-")
+    expl_path_m0_neg = os.path.join("data_restaurants", "output", f"top_{top_n_nearest_points}", city, restaurant_id, f"{metrics[0].replace('-', '_')}_negative", "generation_2.md")
+    expl_path_m0_pos = os.path.join("data_restaurants", "output", f"top_{top_n_nearest_points}", city, restaurant_id, f"{metrics[0].replace('-', '_')}_positive", "generation_2.md")
+    expl_path_m1_neg = os.path.join("data_restaurants", "output", f"top_{top_n_nearest_points}", city, restaurant_id, f"{metrics[1].replace('-', '_')}_negative", "generation_2.md")
+    expl_path_m1_pos = os.path.join("data_restaurants", "output", f"top_{top_n_nearest_points}", city, restaurant_id, f"{metrics[1].replace('-', '_')}_positive", "generation_2.md")
+    with open(expl_path_m0_neg, "r", encoding="utf-8") as f:
+        content_expl_path_m0_neg = f.read()
+    with open(expl_path_m0_pos, "r", encoding="utf-8") as f:
+        content_expl_path_m0_pos = f.read()
+    with open(expl_path_m1_neg, "r", encoding="utf-8") as f:
+        content_expl_path_m1_neg = f.read()
+    with open(expl_path_m1_pos, "r", encoding="utf-8") as f:
+        content_expl_path_m1_pos = f.read()
+
     latex_code = [""]
-    latex_code.append(r"\begin{figure}[htbp]")
+    latex_code.append(r"\begin{comment}")
+    latex_code.append(r"Negative:")
+    latex_code.append(content_expl_path_m0_neg)
+    latex_code.append(r"Positive:")
+    latex_code.append(content_expl_path_m0_pos)
+    latex_code.append(r"\end{comment}")
+    latex_code.append(r"")
+    latex_code.append(r"In the case of " + metrics[0].title().replace('Scci', 'SCCI') +" for $C_{R_{" + restaurant_id +"}}^{-}$ and $C_{R_{"+ restaurant_id + "}}^{+}$ " + r"(see Figure~\ref{" + f"fig:metrics_{city.lower()}_{metrics[0].lower().replace('-', '_')}" + "}),")
+    latex_code.append(r"")
+    latex_code.append(r"\begin{figure}[H]")
     latex_code.append(r"    \centering")
     latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_paper_restaurant/{city.lower()}/{restaurant_id}/{metrics[0].lower().replace('-', '_')}_negative.png}}")
-    latex_code.append(rf"        \caption{{{metrics[0].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{-}}\right)$ {city.title()}}}")
+    latex_code.append(rf"        \caption{{{metrics[0].title().replace('Scci', 'SCCI')} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{-}}\right)$ {city.title()}}}")
     latex_code.append(r"    \end{subfigure}")
     latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_paper_restaurant/{city.lower()}/{restaurant_id}/{metrics[0].lower().replace('-', '_')}_positive.png}}")
-    latex_code.append(rf"        \caption{{{metrics[0].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{+}}\right)$ {city.title()}}}")
+    latex_code.append(rf"        \caption{{{metrics[0].title().replace('Scci', 'SCCI')} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{+}}\right)$ {city.title()}}}")
     latex_code.append(r"    \end{subfigure}")
-    latex_code.append(rf"    \caption{{Top clusters in {city.title()} based on {metrics[0].title()}.}}")
+    latex_code.append(rf"    \caption{{Top clusters in {city.title()} based on {metrics[0].title().replace('Scci', 'SCCI')}.}}")
     latex_code.append(rf"    \label{{fig:metrics_{city.lower()}_{metrics[0].lower().replace('-', '_')}}}")
     latex_code.append(r"\end{figure}")
-    latex_code.append(r"\begin{figure}[htbp]")
+    latex_code.append(r"")
+    latex_code.append(r"")
+    latex_code.append(r"\begin{comment}")
+    latex_code.append(r"Negative:")
+    latex_code.append(content_expl_path_m1_neg)
+    latex_code.append(r"Positive:")
+    latex_code.append(content_expl_path_m1_pos)
+    latex_code.append(r"\end{comment}")
+    latex_code.append(r"")
+    latex_code.append(r"In the case of " + metrics[1].title().replace('Scci', 'SCCI') +" for $C_{R_{" + restaurant_id +"}}^{-}$ and $C_{R_{"+ restaurant_id + "}}^{+}$ " + r"(see Figure~\ref{" + f"fig:metrics_{city.lower()}_{metrics[1].lower().replace('-', '_')}" + "}),")
+    latex_code.append(r"")
+    latex_code.append(r"\begin{figure}[H]")
     latex_code.append(r"    \centering")
     latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_paper_restaurant/{city.lower()}/{restaurant_id}/{metrics[1].lower().replace('-', '_')}_negative.png}}")
-    latex_code.append(rf"        \caption{{{metrics[1].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{-}}\right)$ {city.title()}}}")
+    latex_code.append(rf"        \caption{{{metrics[1].title().replace('Scci', 'SCCI')} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{-}}\right)$ {city.title()}}}")
     latex_code.append(r"    \end{subfigure}")
     latex_code.append(r"    \begin{subfigure}[b]{\textwidth}")
     latex_code.append(r"        \centering")
     latex_code.append(rf"        \includegraphics[width=\textwidth]{{images/figures_paper_restaurant/{city.lower()}/{restaurant_id}/{metrics[1].lower().replace('-', '_')}_positive.png}}")
-    latex_code.append(rf"        \caption{{{metrics[1].title()} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{+}}\right)$ {city.title()}}}")
+    latex_code.append(rf"        \caption{{{metrics[1].title().replace('Scci', 'SCCI')} clusters $\left(C_{{R_{{{restaurant_id}}}}}^{{+}}\right)$ {city.title()}}}")
     latex_code.append(r"    \end{subfigure}")
-    latex_code.append(rf"    \caption{{Top clusters in {city.title()} based on {metrics[1].title()}.}}")
+    latex_code.append(rf"    \caption{{Top clusters in {city.title()} based on {metrics[1].title().replace('Scci', 'SCCI')}.}}")
     latex_code.append(rf"    \label{{fig:metrics_{city.lower()}_{metrics[1].lower().replace('-', '_')}}}")
     latex_code.append(r"\end{figure}")
 
@@ -225,13 +258,17 @@ for restaurant_id in ["1082035", "3179219", "11906544"]:
             "silhouette_score_positive": "Silhouette Score $C^{+}$"
         }
 
+        label = r"tab:summary_metrics_topics_" + city + "_" + restaurant_id
         latex = []
+        latex.append(r"Table \ref{" + label + "} contains the results of the metrics for $R_{" + restaurant_id + "}$ of " + city.title())
+        latex.append(r"")
+        latex.append(r"")
         latex.append(r"\begin{table}[h!]")
         latex.append(r"\centering")
-        latex.append(r"\begin{tabular}{|l|c|c|c|c|c|}")
-        latex.append(r"\hline")
+        latex.append(r"\begin{tabular}{lccccc}")
+        latex.append(r"\toprule")
         latex.append(r"Metric & \# Clusters & \# Non assigned topics & \# Diff. Topics & CQS & Mean \\")
-        latex.append(r"\hline")
+        latex.append(r"\midrule")
 
         total_clusters = 0
         total_non_assigned = 0
@@ -265,9 +302,9 @@ for restaurant_id in ["1082035", "3179219", "11906544"]:
                 f"{metrics_mapping[metric]} & "
                 f"{clusters} & "
                 f"{non_assigned} "
-                f"({round((non_assigned / clusters) * 100, 2)}\\%) & "
+                f"({((non_assigned / clusters) * 100):.2f}\\%) & "
                 f"{diff_topics} & "
-                f"{round(cqs, 2)} & \\\\"
+                f"{cqs:.2f} & \\\\"
             )
             cqs_values.append(cqs)
 
@@ -278,12 +315,12 @@ for restaurant_id in ["1082035", "3179219", "11906544"]:
 
             h += 1
             if h == 2:
-                mean_cqs_metric = round((sum(cqs_values) / len(cqs_values)), 2)
+                mean_cqs_metric = f"{(sum(cqs_values) / len(cqs_values)):.2f}"
                 latex[-2] = latex[-2].replace(r"\\", "") + r"\multirow{2}{*}[-2pt]{" + str(mean_cqs_metric) + r"} \\"
-                latex.append(r"\hline")
+                latex.append(r"\midrule")
                 # latex.append(rf"Mean &  &  &  & {round((sum(cqs_values) / len(cqs_values)), 2)} \\")
-                # latex.append(r"\hline")
-                # latex.append(r"\hline")
+                # latex.append(r"\midrule")
+                # latex.append(r"\midrule")
                 means_sqs_metrics[metric.replace("_negative", "").replace("_positive", "")] = round(
                     (sum(cqs_values) / len(cqs_values)), 2)
                 h = 0
@@ -297,10 +334,10 @@ for restaurant_id in ["1082035", "3179219", "11906544"]:
             f"({format(percent_non_asigned)}\\%) & "
             f"{total_diff_topics} & N/A & N/A \\\\"
         )
-        latex.append(r"\hline")
+        latex.append(r"\bottomrule")
         latex.append(r"\end{tabular}")
-        latex.append(r"\caption{Summary of Clustering Metrics of " + city.title() + " " + restaurant_id + "}")
-        latex.append(r"\label{tab:summary_metrics_topics_" + city + "_" + restaurant_id + "}")
+        latex.append(r"\caption{Summary of Clustering Metrics of " + city.title() + " $R_{" + restaurant_id + "}$} ")
+        latex.append(r"\label{" + label + r"}")
         latex.append(r"\end{table}")
 
         top2_keys = [k for k, v in sorted(means_sqs_metrics.items(), key=lambda x: x[1], reverse=True)[:2]]
